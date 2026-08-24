@@ -1,0 +1,44 @@
+:root {
+  --bg: #0f1115;
+  --panel: #161a22;
+  --border: #232836;
+  --text: #e6e8ef;
+  --muted: #9197a6;
+  --accent: #3b82f6;
+  /* 表面色回退（暗色默认；实际值由 theme.js applyThemeCssVars 按主题注入） */
+  --overlay-bg: rgba(15,23,42,0.7);
+  --overlay-soft: rgba(15,23,42,0.6);
+  --accent-soft: rgba(59,130,246,0.2);
+  --scrollbar-thumb: #475569;
+  --scrollbar-thumb-hover: #64748b;
+  --canvas-bg: rgba(15,23,42,0.85); /* 甘特图等画布底色 */
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+               "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--panel);
+}
+
+/* 滚动条：与整体 UI 风格保持一致 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--panel);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+::-webkit-scrollbar-corner {
+  background: var(--panel);
+}
