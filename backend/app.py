@@ -34,11 +34,14 @@ import passesapi  # noqa: E402
 import satellites  # noqa: E402
 import settings  # noqa: E402
 from exceptions import APIError  # noqa: E402
+from logging_conf import setup_logging  # noqa: E402
 from sio import _clients, position_broadcaster, sio  # noqa: E402
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 启动即统一前端日志格式（幂等，服务/测试均生效）
+    setup_logging()
     task = asyncio.create_task(position_broadcaster())
     yield
     task.cancel()

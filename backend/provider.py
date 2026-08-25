@@ -8,9 +8,11 @@
 from __future__ import annotations
 
 import json
-import sys
+import logging
 import urllib.request
 from typing import Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 # 常见浏览器 UA，避免部分数据源（SatNOGS / CelesTrak）拒绝默认 UA
 _BROWSER_UA = (
@@ -187,10 +189,10 @@ def fetch_tle_online(norad_id: int, timeout: int = 20):
             if result is not None:
                 name, l1, l2 = result
                 if l1.startswith("1 ") and l2.startswith("2 ") and str(norad_id) in l1[2:8]:
-                    print(f"[tle] 在线获取 TLE 成功: {name} ({norad_id})", file=sys.stderr)
+                    logger.info("在线获取 TLE 成功: %s (%s)", name, norad_id)
                     return name, l1, l2
         except Exception as exc:
-            print(f"[warn] TLE 源 {src_name} 获取失败: {exc}", file=sys.stderr)
+            logger.warning("TLE 源 %s 获取失败: %s", src_name, exc)
     return None
 
 
@@ -204,5 +206,5 @@ def fetch_latest_tle(norad_id: int = 24278, timeout: int = 15) -> Tuple[str, str
     online = fetch_tle_online(norad_id, timeout=timeout)
     if online is not None:
         return (*online, False)
-    print(f"[warn] 所有在线 TLE 源均失败，使用 {cfg['name']} 历史 TLE 回退值", file=sys.stderr)
+    logger.warning("所有在线 TLE 源均失败，使用 %s 历史 TLE 回退值", cfg["name"])
     return (*cfg["fallback"], True)
