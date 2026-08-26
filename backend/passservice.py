@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -30,6 +31,11 @@ from astro import (  # noqa: E402
 from state import _state  # noqa: E402
 import tle  # noqa: E402
 from tle import _get_tle_cached, _parse_tle_epoch, _resolve_satellite  # noqa: E402
+
+# 全局实时状态写锁：请求改走线程池后，多个计算请求 / Socket.IO 广播可能并发
+# 读写 state._state，用锁保证"站点配置 + 输出 + 当前卫星"作为整体原子更新，
+# 避免广播读到一半更新（例如 station 是新的、output 还是旧的）。
+_state_lock = threading.Lock()
 
 MAX_HOURS = 24 * 14  # 最多 14 天
 MIN_SAMPLE_SEC = 1
@@ -63,14 +69,15 @@ def _resolve_station(params: dict) -> dict:
 def _update_state(station: dict, sat_key: str, norad_id: int, hours: int,
                   sample_sec: int, horizon: float, output_dict: dict) -> None:
     """把最近一次计算写入 state._state，供 Socket.IO 实时位置广播只读使用。"""
-    _state["station"] = {
-        "lat": station["lat"], "lon": station["lon"], "alt": station["alt"],
-        "label": station["label"],
-        "hours": hours, "sample_interval": sample_sec, "horizon": horizon,
-        "satellite": sat_key, "norad_id": norad_id,
-    }
-    _state["output"] = output_dict
-    _state["current_satellite"] = sat_key
+    with _state_lock:
+        _state["station"] = {
+            "lat": station["lat"], "lon": station["lon"], "alt": station["alt"],
+            "label": station["label"],
+            "hours": hours, "sample_interval": sample_sec, "horizon": horizon,
+            "satellite": sat_key, "norad_id": norad_id,
+        }
+        _state["output"] = output_dict
+        _state["current_satellite"] = sat_key
 
 
 def compute_passes_service(params: dict) -> dict:

@@ -14,12 +14,18 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import time
 
 import config
 from provider import fetch_amsat_frequencies_online  # noqa: E402
 
 logger = logging.getLogger("store")
+
+# 持久化读-改-写保护锁：请求改走线程池后，多线程可并发进入存储层。
+# 用 RLock 保证每次 _save_* 的"读取最新文件 → 合并 → 原子写回"是原子的，
+# 避免并发写同一文件时基于过期快照覆盖彼此的更新。
+_store_lock = threading.RLock()
 
 
 def _atomic_write_json(path, data) -> None:
@@ -225,15 +231,16 @@ def _load_settings() -> dict:
 
 def _save_settings(settings: dict) -> dict:
     """合并并保存设置：仅更新传入的已知字段，未传字段保持当前值（支持分卡保存）。"""
-    merged = _load_settings()
-    for k, v in settings.items():
-        if k in DEFAULT_SETTINGS and k not in ("stations", "satellites"):
-            merged[k] = v
-    if "stations" in settings:
-        merged["stations"] = _normalize_stations(settings["stations"])
-    if "satellites" in settings:
-        merged["satellites"] = _normalize_satellites(settings["satellites"])
-    _atomic_write_json(_SETTINGS_FILE, merged)
+    with _store_lock:
+        merged = _load_settings()
+        for k, v in settings.items():
+            if k in DEFAULT_SETTINGS and k not in ("stations", "satellites"):
+                merged[k] = v
+        if "stations" in settings:
+            merged["stations"] = _normalize_stations(settings["stations"])
+        if "satellites" in settings:
+            merged["satellites"] = _normalize_satellites(settings["satellites"])
+        _atomic_write_json(_SETTINGS_FILE, merged)
     logger.info("设置已保存: %s", _SETTINGS_FILE)
     return merged
 
@@ -259,15 +266,16 @@ def _save_tle(
     source: str = "online",
 ) -> None:
     """把最新 TLE 写入持久化文件（供重启后复用）；source 记录数据来源（online/fallback）。"""
-    tles = _load_tles()
-    tles[str(norad_id)] = {
-        "name": name,
-        "tle1": tle1,
-        "tle2": tle2,
-        "fetched_ts": fetched_ts,
-        "source": source,
-    }
-    _atomic_write_json(_TLES_FILE, tles)
+    with _store_lock:
+        tles = _load_tles()
+        tles[str(norad_id)] = {
+            "name": name,
+            "tle1": tle1,
+            "tle2": tle2,
+            "fetched_ts": fetched_ts,
+            "source": source,
+        }
+        _atomic_write_json(_TLES_FILE, tles)
     logger.info("TLE 已保存: norad=%s source=%s", norad_id, source)
 
 
@@ -296,6 +304,9 @@ def _save_sat_info(norad_id: int, info: dict, fetched_ts: float) -> None:
 _AMSAT_FREQ_MAP: dict = {}
 _AMSAT_FREQ_FETCHED_AT: float = 0.0
 _AMSAT_FREQ_TTL = 24 * 3600.0
+# 对 AMSAT 频率表初始化的锁：并发的第一个请求负责联网拉取，其余复用结果
+# （避免每次请求改走线程池后多个线程同时触发 83KB 文件下载）。
+_amsat_freq_lock = threading.Lock()
 
 
 def _get_amsat_freq_map() -> dict:
@@ -304,14 +315,18 @@ def _get_amsat_freq_map() -> dict:
     now = time.time()
     if _AMSAT_FREQ_MAP and (now - _AMSAT_FREQ_FETCHED_AT) < _AMSAT_FREQ_TTL:
         return _AMSAT_FREQ_MAP
-    try:
-        rows = fetch_amsat_frequencies_online()
-    except Exception:
-        logger.warning("AMSAT 频率在线获取失败，使用空表", exc_info=True)
-        rows = []
-    by_norad: dict = {}
-    for r in rows:
-        by_norad.setdefault(r["norad_id"], []).append(r)
-    _AMSAT_FREQ_MAP = by_norad
-    _AMSAT_FREQ_FETCHED_AT = now
-    return _AMSAT_FREQ_MAP
+    with _amsat_freq_lock:
+        # 双检锁：等待中的线程拿到锁后复查缓存是否已就绪
+        if _AMSAT_FREQ_MAP and (time.time() - _AMSAT_FREQ_FETCHED_AT) < _AMSAT_FREQ_TTL:
+            return _AMSAT_FREQ_MAP
+        try:
+            rows = fetch_amsat_frequencies_online()
+        except Exception:
+            logger.warning("AMSAT 频率在线获取失败，使用空表", exc_info=True)
+            rows = []
+        by_norad: dict = {}
+        for r in rows:
+            by_norad.setdefault(r["norad_id"], []).append(r)
+        _AMSAT_FREQ_MAP = by_norad
+        _AMSAT_FREQ_FETCHED_AT = time.time()
+        return _AMSAT_FREQ_MAP

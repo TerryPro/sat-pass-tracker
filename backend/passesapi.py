@@ -24,7 +24,7 @@ router = APIRouter()
 
 
 @router.get("/api/passes", response_model=PassesResponse)
-async def api_passes(
+def api_passes(
     lat: float = DEFAULT_LAT,
     lon: float = DEFAULT_LON,
     alt: float = DEFAULT_ALT_M,
@@ -48,7 +48,7 @@ async def api_passes(
 
 
 @router.get("/api/groundtrack", response_model=GroundTrackResponse)
-async def api_groundtrack(
+def api_groundtrack(
     lat: float = DEFAULT_LAT,
     lon: float = DEFAULT_LON,
     alt: float = DEFAULT_ALT_M,

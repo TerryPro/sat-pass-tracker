@@ -6,6 +6,7 @@ TLE 管理：在线获取策略（内存缓存 1h → 本地持久化 12h → �
 from __future__ import annotations
 
 import math
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Tuple
@@ -21,6 +22,20 @@ _INFO_VALID_SECONDS = 30 * 24 * 3600.0  # 卫星介绍/频率缓存有效期 30 
 _tle_cache: dict = {}
 # TLE 来源记录：{ norad_id: "online" | "fallback" | "cache" }（供响应中透明提示）
 _tle_source: dict = {}
+# 每颗卫星的联网更新锁：请求改走线程池后可多线程并发进入 _get_tle_cached，
+# 用锁保证同一 NORAD 只发生一次真实网络拉取（其余线程复用结果）。
+_tle_fetch_locks: dict = {}
+_tle_fetch_locks_guard = threading.Lock()
+
+
+def _tle_fetch_lock(norad_id: int) -> threading.Lock:
+    """返回指定卫星的 per-NORAD 联网锁（惰性创建，线程安全）。"""
+    with _tle_fetch_locks_guard:
+        lock = _tle_fetch_locks.get(norad_id)
+        if lock is None:
+            lock = threading.Lock()
+            _tle_fetch_locks[norad_id] = lock
+        return lock
 
 
 def tle_cache_set(
@@ -78,20 +93,25 @@ def _get_tle_cached(norad_id: int = 24278):
         _tle_cache[fetched_key] = float(saved.get("fetched_ts", now))
         _tle_source[norad_id] = str(saved.get("source", "cache"))
         return _tle_cache[key]
-    # 3) 联网获取最新 TLE，写入内存 + 持久化；在线失败用历史兜底并如实记录来源
-    name, tle1, tle2, is_fallback = fetch_latest_tle(norad_id=norad_id)
-    _tle_cache[key] = (name, tle1, tle2)
-    _tle_cache[fetched_key] = now
-    _tle_source[norad_id] = "fallback" if is_fallback else "online"
-    _save_tle(
-        norad_id,
-        _clean_sat_name(name),
-        tle1,
-        tle2,
-        now,
-        source=_tle_source[norad_id],
-    )
-    return _tle_cache[key]
+    # 3) 联网获取最新 TLE，写入内存 + 持久化；在线失败用历史兜底并如实记录来源。
+    #    用 per-NORAD 锁串行化这一段的网络拉取；持有锁后会做一次二次检查，
+    #    避免并发请求对同一卫星重复联网（也避免多次写盘）。
+    with _tle_fetch_lock(norad_id):
+        if _tle_cache.get(key) and (now - _tle_cache.get(fetched_key, 0)) < _TLE_CACHE_TTL:
+            return _tle_cache[key]
+        name, tle1, tle2, is_fallback = fetch_latest_tle(norad_id=norad_id)
+        _tle_cache[key] = (name, tle1, tle2)
+        _tle_cache[fetched_key] = now
+        _tle_source[norad_id] = "fallback" if is_fallback else "online"
+        _save_tle(
+            norad_id,
+            _clean_sat_name(name),
+            tle1,
+            tle2,
+            now,
+            source=_tle_source[norad_id],
+        )
+        return _tle_cache[key]
 
 
 def _resolve_satellite(params: dict) -> Tuple[str, int]:

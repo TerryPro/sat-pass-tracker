@@ -42,7 +42,7 @@ def _find_satellite(sat_id: str) -> dict | None:
 
 
 @router.get("/api/satellites")
-async def api_get_satellites():
+def api_get_satellites():
     """读取卫星列表（内置 + 自定义），附带 TLE 更新时间与轨道历元。"""
     sats = _load_satellites()
     tles = _load_tles()
@@ -63,7 +63,7 @@ async def api_get_satellites():
 
 
 @router.post("/api/satellites/search")
-async def api_search_satellites(payload: dict):
+def api_search_satellites(payload: dict):
     """按名称或 NORAD 目录号搜索卫星（供导入前选择）。
 
     名称搜索：在常用卫星目录中做中英文模糊匹配，再在线获取 TLE；
@@ -102,7 +102,7 @@ async def api_search_satellites(payload: dict):
 
 
 @router.post("/api/satellites/import")
-async def api_import_satellite(payload: dict):
+def api_import_satellite(payload: dict):
     """按 NORAD 目录号从网络导入卫星：联网获取 TLE 验证成功后加入列表。"""
     norad = str(payload.get("norad_id", "")).strip()
     if not norad.isdigit():
@@ -126,7 +126,7 @@ async def api_import_satellite(payload: dict):
 
 
 @router.post("/api/satellites/delete")
-async def api_delete_satellite(payload: dict):
+def api_delete_satellite(payload: dict):
     """删除自定义卫星（内置卫星不可删除）。"""
     sid = str(payload.get("id", ""))
     sats = [s for s in _load_satellites() if not (s["id"] == sid and not s["builtin"])]
@@ -135,7 +135,7 @@ async def api_delete_satellite(payload: dict):
 
 
 @router.get("/api/satellites/{sat_id}")
-async def api_satellite_detail(sat_id: str):
+def api_satellite_detail(sat_id: str):
     """卫星详情：基本信息 + 最新 TLE + 解析出的轨道根数 + 数据时间/过期状态。"""
     sat = _find_satellite(sat_id)
     if not sat:
@@ -161,7 +161,7 @@ async def api_satellite_detail(sat_id: str):
 
 
 @router.get("/api/satellites/{sat_id}/info")
-async def api_satellite_info(sat_id: str):
+def api_satellite_info(sat_id: str):
     """卫星介绍与频率信息：SatNOGS 基本信息 + AMSAT 业余卫星频率（30 天本地缓存）。"""
     sat = _find_satellite(sat_id)
     if not sat:
@@ -205,7 +205,7 @@ async def api_satellite_info(sat_id: str):
 
 
 @router.post("/api/satellites/{sat_id}/refresh")
-async def api_refresh_satellite(sat_id: str):
+def api_refresh_satellite(sat_id: str):
     """强制从网络刷新指定卫星的 TLE 并持久化（手动更新轨道数据）。"""
     sat = _find_satellite(sat_id)
     if not sat:
@@ -239,7 +239,7 @@ async def api_refresh_satellite(sat_id: str):
 
 
 @router.post("/api/satellites/refresh-all")
-async def api_refresh_all_satellites():
+def api_refresh_all_satellites():
     """批量从网络更新全部卫星的 TLE（逐颗获取并持久化，失败不影响其它卫星）。"""
     sats = _load_satellites()
     results = []
