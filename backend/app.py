@@ -30,6 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import config  # noqa: E402
+import library  # noqa: E402
 import passesapi  # noqa: E402
 import satellites  # noqa: E402
 import settings  # noqa: E402
@@ -78,6 +79,7 @@ async def unhandled_error_handler(request: Request, exc: Exception):
 app.include_router(settings.router)
 app.include_router(satellites.router)
 app.include_router(passesapi.router)
+app.include_router(library.router)
 
 
 @app.get("/api/health")

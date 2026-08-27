@@ -330,3 +330,11 @@ def _get_amsat_freq_map() -> dict:
         _AMSAT_FREQ_MAP = by_norad
         _AMSAT_FREQ_FETCHED_AT = time.time()
         return _AMSAT_FREQ_MAP
+
+
+# ---------------------------------------------------------------
+# 卫星数据文件目录：下载的原始数据源文件保存目录（不入库，直接留档）。
+# 位于运行时数据目录之下（GS_DATA_DIR 可覆盖），随 backend/data 一并忽略版本控制。
+# 实际读写由 lib 模块负责：lib.download_group 写入 <key>.tle，lib 从文件系统列出/解析。
+# ---------------------------------------------------------------
+SATELLITE_FILES_DIR = _DATA_DIR / "satellite_files"

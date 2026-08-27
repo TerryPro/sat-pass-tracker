@@ -13,6 +13,7 @@ def _isolate_files(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "_SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(store, "_TLES_FILE", tmp_path / "tles.json")
     monkeypatch.setattr(store, "_SATINFO_FILE", tmp_path / "satellite_info.json")
+    monkeypatch.setattr(store, "SATELLITE_FILES_DIR", tmp_path / "satellite_files")
 
 
 def test_save_settings_roundtrip():

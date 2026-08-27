@@ -6,6 +6,7 @@ import CssBaseline from "@mui/material/CssBaseline";
 import AppShell from "./layout/AppShell.jsx";
 import TrackPage from "./pages/TrackPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
+import SatellitePage from "./pages/SatellitePage.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { createAppTheme, applyThemeCssVars } from "./theme.js";
 import { loadSettings } from "./slices/settingsSlice.js";
@@ -31,6 +32,7 @@ function ThemedApp() {
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="/track" replace />} />
           <Route path="/track" element={<TrackPage />} />
+          <Route path="/satellites" element={<SatellitePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/track" replace />} />
         </Route>
