@@ -22,7 +22,7 @@ def test_save_settings_roundtrip():
     assert saved["theme"] == "light"
     # 内置站点 / 卫星始终保留
     assert any(s["id"] == "beijing" for s in saved["stations"])
-    assert any(s["id"] == "fo29" for s in saved["satellites"])
+    assert any(s["id"] == "iss" for s in saved["satellites"])
 
 
 def test_save_tle_roundtrip():
@@ -60,7 +60,7 @@ def test_corrupt_settings_falls_back_to_defaults():
     store._SETTINGS_FILE.write_text("{not-json", encoding="utf-8")
     saved = store._load_settings()
     assert saved["theme"] == "dark"  # 回退默认值
-    assert any(s["id"] == "fo29" for s in saved["satellites"])
+    assert any(s["id"] == "iss" for s in saved["satellites"])
 
 
 def test_corrupt_tles_falls_back_to_empty():
@@ -86,11 +86,11 @@ def test_normalize_stations_dedup_and_coerce():
 
 def test_normalize_satellites_dedup_by_norad():
     raw = [
-        {"id": "dup", "norad_id": 24278},  # 与内置 FO-29 相同 norad → 忽略
+        {"id": "dup", "norad_id": 24278},  # 普通星(FO-29 已非内置)，保留
         {"id": "noaa15", "norad_id": 25338},
         {"id": "noaa15", "norad_id": 25338},  # 重复 id + norad → 去重
     ]
     merged = store._normalize_satellites(raw)
     ids = {s["id"] for s in merged}
-    assert "dup" not in ids
-    assert ids == {"fo29", "iss", "css", "noaa15"}
+    assert "dup" in ids
+    assert ids == {"iss", "css", "dup", "noaa15"}

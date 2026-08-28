@@ -93,6 +93,8 @@ def fetch_satellite_info_online(norad_id: int, timeout: int = 20) -> Optional[di
     if not isinstance(data, list) or not data:
         return None
     s = data[0]
+    # 图片：API 返回相对路径（如 satellites/xxx.jpg），拼 SatNOGS 静态资源前缀成完整 URL
+    img = s.get("image") or ""
     return {
         "name": s.get("name") or "",
         "names": s.get("names") or "",
@@ -102,6 +104,8 @@ def fetch_satellite_info_online(norad_id: int, timeout: int = 20) -> Optional[di
         "countries": s.get("countries") or "",
         "website": s.get("website") or "",
         "telemetries": [t.get("decoder") for t in (s.get("telemetries") or [])],
+        "image": img,
+        "image_url": f"https://db.satnogs.org/media/{img}" if img else "",
     }
 
 

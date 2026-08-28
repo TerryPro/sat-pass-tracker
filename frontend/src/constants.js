@@ -51,7 +51,6 @@ export const STATUS_LABEL = { alive: "在轨运行", dead: "已失效", decayed:
 // 内置卫星 / 地面站（与后端 store 一致，不可删除/编辑），作为后端未加载时的回退
 // ---------------------------------------------------------------
 export const BUILTIN_SATELLITES = [
-  { id: "fo29", name: "FO-29 (JAS-2)", norad_id: 24278, builtin: true },
   { id: "iss", name: "国际空间站 ISS", norad_id: 25544, builtin: true },
   { id: "css", name: "中国空间站 CSS", norad_id: 48274, builtin: true },
 ];

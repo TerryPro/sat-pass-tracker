@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 import app as app_module
 import lib
+import provider
 import store
 
 
@@ -119,7 +120,12 @@ def test_library_meta_empty():
     assert len(body["categories"]) == 6
     assert all("groups" in c for c in body["categories"])
     all_groups = [g for c in body["categories"] for g in c["groups"]]
-    assert len(all_groups) >= 20  # 常用组总数
+    # 精简后仅保留常用组（数量与是否排除已删组）
+    assert len(all_groups) == 18
+    removed = {"visual", "military", "radar", "engineering", "geodetic", "sarsat"}
+    keys = {g["key"] for g in all_groups}
+    assert keys.isdisjoint(removed)
+    assert "stations" in keys and "amateur" in keys and "beidou" in keys
     assert all("downloaded" in g and "label" in g for g in all_groups)
     # 平铺 groups 的数量与分类中组总数一致
     assert len(body["groups"]) == len(all_groups)
@@ -154,4 +160,149 @@ def test_library_download_and_entries(monkeypatch):
 def test_library_download_unknown_key_returns_400():
     client = TestClient(app_module.app)
     r = client.post("/api/library/download", json={"key": "nope"})
+    assert r.status_code == 400
+
+
+# ---- 详情(find_entry_by_norad / /api/library/detail)----
+def test_find_entry_by_norad(monkeypatch):
+    assert lib.find_entry_by_norad(24278) is None  # 尚未下载任何组
+    monkeypatch.setattr(lib, "_http_get", lambda url, timeout=20: _FAKE_3LE)
+    lib.download_group("amateur")  # 真实路径经隔离目录 + mock 后离线
+    e = lib.find_entry_by_norad(24278)
+    assert e is not None and "FO-29" in e["name"]
+    assert e["norad_id"] == 24278
+    assert lib.find_entry_by_norad(99999) is None
+
+
+def test_library_detail_returns_orbit(monkeypatch):
+    monkeypatch.setattr(lib, "_http_get", lambda url, timeout=20: _FAKE_3LE)
+    client = TestClient(app_module.app)
+    client.post("/api/library/download", json={"key": "amateur"})
+    r = client.get("/api/library/detail", params={"norad_id": 24278})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["norad_id"] == 24278
+    assert body["name"]
+    assert "orbit" in body
+    # 轨道根数含周期 / 倾角等
+    assert "period_min" in body["orbit"]
+    assert "inclination_deg" in body["orbit"]
+    assert "tle1" in body and body["tle1"].startswith("1 24278")
+
+
+def test_library_detail_not_found():
+    client = TestClient(app_module.app)
+    r = client.get("/api/library/detail", params={"norad_id": 99999})
+    assert r.status_code == 404
+
+
+# ---- 档案信息(get_satellite_info 缓存 / /api/library/info)----
+def _fake_info_meta():
+    return {
+        "name": "OSCAR 7", "names": "AO-7, AMSAT OSCAR 7", "status": "in orbit",
+        "launch_date": "1974-11-15T00:00:00Z", "operator": "AMSAT",
+        "countries": "US", "website": "http://amsat.org", "telemetries": [],
+        "image_url": "https://db.satnogs.org/media/satellites/AMSAT-OSCAR_7.jpg",
+    }
+
+
+def test_get_satellite_info_caches(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_fetch(norad_id, timeout=20):
+        calls["n"] += 1
+        return _fake_info_meta()
+
+    monkeypatch.setattr(provider, "fetch_satellite_info_online", fake_fetch)
+    monkeypatch.setattr(
+        store, "_get_amsat_freq_map",
+        lambda: {"7530": [{"uplink": "145.85", "downlink": "29.4", "mode": "A"}]},
+    )
+    # 首次：联网拉取并写缓存
+    info1 = lib.get_satellite_info(7530)
+    assert info1 is not None
+    assert calls["n"] == 1
+    assert "AO-7" in info1["names"]
+    assert info1["frequencies"][0]["uplink"] == "145.85"
+    assert info1["fetched_at"]
+    assert info1["image_url"] == "https://db.satnogs.org/media/satellites/AMSAT-OSCAR_7.jpg"
+    # 再次：命中缓存，不再联网
+    info2 = lib.get_satellite_info(7530)
+    assert info2 is not None and calls["n"] == 1
+    # 强制刷新：忽略缓存，重新联网
+    info3 = lib.get_satellite_info(7530, refresh=True)
+    assert info3 is not None and calls["n"] == 2
+
+
+def test_get_satellite_info_not_found_not_cached(monkeypatch):
+    monkeypatch.setattr(provider, "fetch_satellite_info_online", lambda norad_id, timeout=20: {})
+    monkeypatch.setattr(store, "_get_amsat_freq_map", lambda: {})
+    assert lib.get_satellite_info(424242) is None
+    assert "424242" not in store._load_sat_info()  # 不缓存"查不到"的结果
+
+
+def test_library_info_endpoint(monkeypatch):
+    monkeypatch.setattr(provider, "fetch_satellite_info_online", lambda norad_id, timeout=20: _fake_info_meta())
+    monkeypatch.setattr(store, "_get_amsat_freq_map", lambda: {"7530": [{"mode": "A"}]})
+    client = TestClient(app_module.app)
+    r = client.get("/api/library/info", params={"norad_id": 7530})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["found"] is True
+    assert "AO-7" in body["names"]
+    # 命中缓存后 found 仍为 True
+    r2 = client.get("/api/library/info", params={"norad_id": 7530})
+    assert r2.json()["found"] is True
+
+    # 未收档 → found False
+    monkeypatch.setattr(provider, "fetch_satellite_info_online", lambda norad_id, timeout=20: {})
+    r3 = client.get("/api/library/info", params={"norad_id": 424242, "refresh": "true"})
+    assert r3.status_code == 200 and r3.json()["found"] is False
+
+
+# ---- 加入/移出已加入列表(activate / deactivate)----
+def _activate_setup(monkeypatch):
+    """mock 网络 + 下载一个 amateur 组(含 AO-7 7530，非内置星)，返回 client。"""
+    monkeypatch.setattr(
+        lib, "_http_get", lambda url, timeout=20:
+        """OSCAR 7 (AO-7)
+1 07530U 74089B   26238.93547522 -.00000023  00000+0  14709-3 0  9990
+2 07530 101.9921 252.9218 0012226 358.1303 117.0601 12.53699297369383
+"""
+    )
+    client = TestClient(app_module.app)
+    client.post("/api/library/download", json={"key": "amateur"})
+    return client
+
+
+def test_library_activate(monkeypatch):
+    client = _activate_setup(monkeypatch)
+    r = client.post("/api/library/activate", json={"norad_id": 7530})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["satellite"]["norad_id"] == 7530
+    assert any(int(s["norad_id"]) == 7530 for s in body["satellites"])
+    # 二次激活 → 已在
+    r2 = client.post("/api/library/activate", json={"norad_id": 7530})
+    assert r2.status_code == 400
+    # 库中不存在的星 → 404
+    r3 = client.post("/api/library/activate", json={"norad_id": 999999})
+    assert r3.status_code == 404
+
+
+def test_library_activate_and_deactivate(monkeypatch):
+    client = _activate_setup(monkeypatch)
+    client.post("/api/library/activate", json={"norad_id": 7530})
+    r = client.post("/api/library/deactivate", json={"id": str(7530)})
+    assert r.status_code == 200
+    assert all(int(s["norad_id"]) != 7530 for s in r.json()["satellites"])
+    # 内置星不可删（iss 仍为内置）
+    r2 = client.post("/api/library/deactivate", json={"id": "iss"})
+    assert r2.status_code == 200
+    assert any(s["id"] == "iss" for s in r2.json()["satellites"])
+
+
+def test_library_deactivate_missing_id():
+    client = TestClient(app_module.app)
+    r = client.post("/api/library/deactivate", json={})
     assert r.status_code == 400

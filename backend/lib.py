@@ -11,10 +11,12 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import time
 import urllib.request
 from datetime import datetime, timezone
 from typing import List, Optional
 
+import provider  # noqa: E402
 import store  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,6 @@ CELESTRAK_CATEGORIES = [
         "label": "特种卫星 (Special-Interest)",
         "groups": [
             _group("stations", "载人空间站"),
-            _group("visual", "亮星 (Brightest)"),
         ],
     },
     {
@@ -56,7 +57,6 @@ CELESTRAK_CATEGORIES = [
             _group("weather", "气象卫星"),
             _group("resource", "地球资源卫星"),
             _group("sar", "合成孔径雷达 (SAR)"),
-            _group("sarsat", "搜救卫星 (SARSAT)"),
             _group("dmc", "灾害监测 (DMC)"),
         ],
     },
@@ -87,9 +87,7 @@ CELESTRAK_CATEGORIES = [
         "label": "科学卫星",
         "groups": [
             _group("science", "空间与地球科学"),
-            _group("engineering", "工程卫星"),
             _group("education", "教育卫星"),
-            _group("geodetic", "大地测量卫星"),
         ],
     },
     {
@@ -97,8 +95,6 @@ CELESTRAK_CATEGORIES = [
         "label": "其它卫星",
         "groups": [
             _group("cubesat", "立方体卫星 (CubeSats)"),
-            _group("military", "军事卫星"),
-            _group("radar", "雷达校准卫星"),
         ],
     },
 ]
@@ -275,3 +271,76 @@ def list_all_entries() -> List[dict]:
         if entries:
             out.extend(entries)
     return out
+
+
+def find_entry_by_norad(norad_id: int) -> Optional[dict]:
+    """在所有已下载组文件中查找指定 NORAD 号的卫星（返回第一条匹配）。
+
+    复用 read_group_entries 的解析结果；未找到返回 None。
+    """
+    norad_str = str(norad_id)
+    for info in list_downloaded():
+        entries = read_group_entries(info["key"]) or []
+        for e in entries:
+            if str(e["norad_id"]) == norad_str:
+                return e
+    return None
+
+
+def _iso(ts: float) -> str:
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+
+
+def get_satellite_info(norad_id: int, refresh: bool = False) -> Optional[dict]:
+    """获取并缓存卫星档案信息（SatNOGS 基本信息 + AMSAT 频率）。
+
+    返回 { norad_id, names, status, launch_date, operator, countries, website,
+            telemetries, frequencies, fetched_at }；
+    若 SatNOGS 中无此星（或联网失败）返回 None 且不写入缓存（避免误缓存）。
+    refresh=True 忽略缓存并强制重新联网。
+    """
+    saved = store._load_sat_info().get(str(norad_id))
+    if saved and not refresh:
+        return _serialize_info(saved, norad_id)
+    try:
+        meta = provider.fetch_satellite_info_online(norad_id) or {}
+    except Exception:
+        meta = {}
+    # SatNOGS 未收录（空结果）→ 视为"无档案"，返回 None 且不缓存
+    if not meta.get("name") and not meta.get("names"):
+        return None
+    freqs = store._get_amsat_freq_map().get(str(norad_id), [])
+    info = {
+        "names": meta.get("names", ""),
+        "status": meta.get("status", ""),
+        "launch_date": meta.get("launch_date", ""),
+        "operator": meta.get("operator", ""),
+        "countries": meta.get("countries", ""),
+        "website": meta.get("website", ""),
+        "telemetries": meta.get("telemetries", []),
+        "frequencies": freqs,
+        "image_url": meta.get("image_url", ""),
+    }
+    fetched_ts = time.time()
+    store._save_sat_info(norad_id, info, fetched_ts)
+    return _serialize_info({**info, "fetched_ts": fetched_ts}, norad_id)
+
+
+def _serialize_info(info: dict, norad_id: int) -> dict:
+    ts = info.get("fetched_ts")
+    base = {
+        "norad_id": norad_id,
+        "names": info.get("names", ""),
+        "status": info.get("status", ""),
+        "launch_date": info.get("launch_date", ""),
+        "operator": info.get("operator", ""),
+        "countries": info.get("countries", ""),
+        "website": info.get("website", ""),
+        "telemetries": info.get("telemetries", []),
+        "frequencies": info.get("frequencies", []),
+        "image_url": info.get("image_url", ""),  # 兼容旧缓存无 image 键
+    }
+    return {
+        **base,
+        "fetched_at": _iso(ts) if isinstance(ts, (int, float)) else (ts or ""),
+    }

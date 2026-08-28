@@ -13,13 +13,24 @@ import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Button from "@mui/material/Button";
+import IconButton from "@mui/material/IconButton";
 import TextField from "@mui/material/TextField";
 import InputAdornment from "@mui/material/InputAdornment";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
 import Alert from "@mui/material/Alert";
 import DownloadIcon from "@mui/icons-material/Download";
 import SearchIcon from "@mui/icons-material/Search";
+import ArticleIcon from "@mui/icons-material/Article";
+import PublicIcon from "@mui/icons-material/Public";
+import AddIcon from "@mui/icons-material/Add";
+import CheckIcon from "@mui/icons-material/Check";
+import DeleteIcon from "@mui/icons-material/Delete";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import SatelliteAltIcon from "@mui/icons-material/SatelliteAlt";
 import CloudIcon from "@mui/icons-material/Cloud";
@@ -35,6 +46,9 @@ import {
   clearLibraryError,
   clearEntries,
 } from "../slices/librarySlice.js";
+import { fetchLibraryDetail, fetchLibraryInfo, activateSatellite, deactivateSatellite } from "../api/library.js";
+import { fetchSatellites } from "../api";
+import { ORBIT_LABELS } from "../constants.js";
 
 // 分类 meta 的图标 + 主色（六类，与后端 lib.CELESTRAK_CATEGORIES 的 key 对应）
 const CATEGORY_STYLE = {
@@ -65,15 +79,66 @@ export default function SatellitePage() {
   const [q, setQ] = useState("");
   // 当前选中查看的组（只按选中组浏览；空 = 尚未选择，右侧提示）
   const [selectedGroup, setSelectedGroup] = useState("");
+  // 弹窗：currentNorad 为当前查看的星；orbitOpen 轨道弹窗，infoOpen 档案弹窗
+  const [detailNorad, setDetailNorad] = useState(null);   // 当前查看的星 norad
+  const [orbitOpen, setOrbitOpen] = useState(false);       // 轨道信息弹窗
+  const [infoOpen, setInfoOpen] = useState(false);         // 卫星档案信息弹窗
+  const [detail, setDetail] = useState(null);             // 轨道数据(轨道根数 + TLE)
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  // 档案信息(SatNOGS + AMSAT)状态
+  const [info, setInfo] = useState(null);
+  const [infoLoading, setInfoLoading] = useState(false);
+  const [infoError, setInfoError] = useState("");
+  const [infoRefreshing, setInfoRefreshing] = useState(false);
+  // 已加入列表（配置页卫星管理表格共用数据源 settings.satellites）
+  const [joined, setJoined] = useState([]);
+  const [joinedLoading, setJoinedLoading] = useState(false);
+  const [joinedError, setJoinedError] = useState("");
 
   // 请求竞态防护：递增序号，store 只采纳最新的（latest-wins）
   const reqSeqRef = useRef(0);
   const nextSeq = () => ++reqSeqRef.current;
 
-  // 页面挂载：仅加载数据源元信息；条目等用户选中某个组后再加载
+  // 页面挂载：加载数据源元信息与已加入列表；条目等用户选中某个组后再加载
   useEffect(() => {
     dispatch(loadLibraryMeta());
-  }, [dispatch]);
+    loadJoined();
+  }, [dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 加载"已加入"列表（配置页卫星表格同源，含 TLE 更新时间/历元）
+  const loadJoined = async () => {
+    setJoinedLoading(true);
+    setJoinedError("");
+    try {
+      const res = await fetchSatellites();
+      setJoined(res.satellites || []);
+    } catch (e) {
+      setJoinedError(e.message || "加载已加入卫星失败");
+    } finally {
+      setJoinedLoading(false);
+    }
+  };
+
+  // 把库内某星加入已加入列表
+  const handleActivate = async (noradId) => {
+    try {
+      await activateSatellite(noradId);
+      await loadJoined();
+    } catch (e) {
+      setJoinedError(e.message || "加入失败");
+    }
+  };
+
+  // 从已加入列表移除（内置星后端会拒绝）
+  const handleDeactivate = async (id) => {
+    try {
+      await deactivateSatellite(id);
+      await loadJoined();
+    } catch (e) {
+      setJoinedError(e.message || "移除失败");
+    }
+  };
 
   const entries = entriesState?.entries || [];
 
@@ -101,6 +166,54 @@ export default function SatellitePage() {
 
   const handleMetaErrorDismiss = () => dispatch(clearLibraryError());
 
+  // 打开「轨道信息」弹窗（轨道根数从 TLE 解析，离线）
+  const openOrbit = async (noradId) => {
+    setDetailNorad(noradId);
+    setOrbitOpen(true);
+    setDetail(null);
+    setDetailError("");
+    setDetailLoading(true);
+    try {
+      setDetail(await fetchLibraryDetail(noradId));
+    } catch (e) {
+      setDetailError(e.message || "获取轨道信息失败");
+      setDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+  const closeOrbit = () => setOrbitOpen(false);
+
+  // 打开「卫星档案信息」弹窗（SatNOGS + AMSAT；本地缓存，可强制刷新）
+  const openInfo = async (noradId) => {
+    setDetailNorad(noradId);
+    setInfoOpen(true);
+    await loadInfo(noradId, false);
+  };
+  const closeInfo = () => setInfoOpen(false);
+
+  // 加载/刷新档案信息（refresh=True 强制联网更新缓存）
+  const loadInfo = async (noradId, refresh) => {
+    setInfo(null);
+    setInfoError("");
+    setInfoLoading(true);
+    setInfoRefreshing(refresh);
+    try {
+      const res = await fetchLibraryInfo(noradId, refresh);
+      setInfo(res);
+    } catch (e) {
+      setInfoError(e.message || "获取档案信息失败");
+      setInfo(null);
+    } finally {
+      setInfoLoading(false);
+      setInfoRefreshing(false);
+    }
+  };
+
+  const handleRefreshInfo = () => {
+    if (detailNorad != null) loadInfo(detailNorad, true);
+  };
+
   const handleDownload = (key) => {
     dispatch(downloadLibrarySource(key)).then(() => {
       // 下载完成后刷新 meta；若尚未选组则自动选中刚下载的组，否则刷新当前组
@@ -114,10 +227,6 @@ export default function SatellitePage() {
   const downloadedGroups = (meta?.groups || []).filter((g) => g.downloaded);
   return (
     <Box sx={{ p: 2.5, display: "flex", flexDirection: "column", gap: 2, height: "100%", overflow: "hidden", minHeight: 0 }}>
-      <Typography variant="h6" sx={{ mb: 0, flexShrink: 0 }}>
-        卫星管理
-      </Typography>
-
       {/* 左右分栏：左=数据源(窄)，右=已下载数据浏览 */}
       <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 2, flex: 1, minHeight: 0 }}>
         {/* 数据源面板（左，较窄）：下载/更新各组的原始 TLE 文件 */}
@@ -125,8 +234,11 @@ export default function SatellitePage() {
           variant="outlined"
           sx={{ p: 1.5, flex: "0 0 auto", width: { xs: "100%", md: 320 }, display: "flex", flexDirection: "column", minHeight: 0, overflow: "auto" }}
         >
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5 }}>
             数据源
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+            下载并管理各数据源的原始 TLE 文件
           </Typography>
           {error && (
             <Alert severity="error" size="small" sx={{ mb: 1 }} onClose={handleMetaErrorDismiss}>
@@ -225,8 +337,8 @@ export default function SatellitePage() {
 
         {/* 数据浏览面板（右，占满剩余）：查看已下载原始文件解析出的卫星 */}
         <Paper sx={{ p: 2.5, flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mb: 1.5, flexWrap: "wrap" }}>
-            <Typography variant="h6" sx={{ mb: 0 }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mb: 0.5, flexWrap: "wrap" }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               已下载的数据
             </Typography>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -252,6 +364,9 @@ export default function SatellitePage() {
               </Select>
             </Box>
           </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+            在所选数据源中浏览卫星，可查看轨道与档案信息
+          </Typography>
           <Box sx={{ mb: 1.5 }}>
             <TextField
               label="搜索名称 / NORAD"
@@ -276,21 +391,19 @@ export default function SatellitePage() {
                 <TableRow>
                   <TableCell>名称</TableCell>
                   <TableCell align="right">NORAD</TableCell>
-                  <TableCell>来源组</TableCell>
-                  <TableCell align="right">TLE 时间</TableCell>
-                  <TableCell sx={{ minWidth: 320 }}>TLE</TableCell>
+                  <TableCell align="right">操作</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {searching && displayEntries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center">
+                    <TableCell colSpan={3} align="center">
                       <Typography variant="body2" color="text.secondary">搜索中…</Typography>
                     </TableCell>
                   </TableRow>
                 ) : displayEntries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center">
+                    <TableCell colSpan={3} align="center">
                       <Typography variant="body2" color="text.secondary">
                         {groupEmpty
                           ? "请选择要查看的组（右侧下拉或左侧点击已下载的组）。"
@@ -305,21 +418,60 @@ export default function SatellitePage() {
                     <TableRow key={e.norad_id} hover>
                       <TableCell>{e.name}</TableCell>
                       <TableCell align="right">{e.norad_id}</TableCell>
-                      <TableCell>{e.source || "—"}</TableCell>
-                      <TableCell align="right" title={e.tle_fetched_at || ""}>{fmtDT(e.tle_fetched_at)}</TableCell>
-                      <TableCell>
-                        <Typography
-                          variant="caption"
-                          sx={{ fontFamily: "monospace", wordBreak: "break-all", display: "block" }}
+                      <TableCell align="right">
+                        {joined.some((j) => Number(j.norad_id) === Number(e.norad_id)) ? (
+                          <IconButton
+                            size="small"
+                            aria-label={`已加入 ${e.name}`}
+                            title="已加入"
+                            disabled
+                            sx={{ color: "success.main", bgcolor: "rgba(46,125,50,0.12)" }}
+                          >
+                            <CheckIcon fontSize="small" />
+                          </IconButton>
+                        ) : (
+                          <IconButton
+                            size="small"
+                            aria-label={`加入 ${e.name}`}
+                            title="加入"
+                            onClick={() => handleActivate(e.norad_id)}
+                            sx={{
+                              color: "primary.main",
+                              bgcolor: "rgba(25, 118, 210, 0.12)",
+                              "&:hover": { bgcolor: "primary.main", color: "#fff" },
+                            }}
+                          >
+                            <AddIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                        {/* 轨道信息（离线，TLE 解析） */}
+                        <IconButton
+                          size="small"
+                          aria-label={`轨道 ${e.name}`}
+                          title="轨道信息"
+                          onClick={() => openOrbit(e.norad_id)}
+                          sx={{
+                            color: "primary.main",
+                            bgcolor: "rgba(25, 118, 210, 0.12)",
+                            "&:hover": { bgcolor: "primary.main", color: "#fff" },
+                          }}
                         >
-                          {e.tle1}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{ fontFamily: "monospace", wordBreak: "break-all", display: "block" }}
+                          <PublicIcon fontSize="small" />
+                        </IconButton>
+                        {/* 卫星档案信息（SatNOGS + AMSAT） */}
+                        <IconButton
+                          size="small"
+                          aria-label={`卫星信息 ${e.name}`}
+                          title="卫星信息"
+                          onClick={() => openInfo(e.norad_id)}
+                          sx={{
+                            color: "primary.main",
+                            bgcolor: "rgba(25, 118, 210, 0.12)",
+                            "&:hover": { bgcolor: "primary.main", color: "#fff" },
+                          }}
                         >
-                          {e.tle2}
-                        </Typography>
+                          <ArticleIcon fontSize="small" />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
                   ))
@@ -333,7 +485,204 @@ export default function SatellitePage() {
             </Typography>
           )}
         </Paper>
+
+        {/* 已加入卫星（配置页"卫星管理"表格同源；本页可从数据源浏览列点「加入」添加） */}
+        <Paper
+          variant="outlined"
+          sx={{ p: 1.5, flex: "0 0 auto", width: { xs: "100%", md: 560 }, display: "flex", flexDirection: "column", minHeight: 0 }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 0.5, flexWrap: "wrap" }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              已加入卫星
+            </Typography>
+            {joinedError && <Typography variant="caption" color="error">{joinedError}</Typography>}
+          </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+            已选用卫星，支持查看轨道/档案与移除
+          </Typography>
+          <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>名称</TableCell>
+                  <TableCell align="right">NORAD</TableCell>
+                  <TableCell align="right">更新时间</TableCell>
+                  <TableCell align="right">轨道时间</TableCell>
+                  <TableCell align="right">操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {joinedLoading && joined.length === 0 ? (
+                  <TableRow><TableCell colSpan={5} align="center"><Typography variant="body2" color="text.secondary">加载中…</Typography></TableCell></TableRow>
+                ) : joined.length === 0 ? (
+                  <TableRow><TableCell colSpan={5} align="center"><Typography variant="body2" color="text.secondary">暂无已加入卫星，可在数据源浏览列点「加入」。</Typography></TableCell></TableRow>
+                ) : (
+                  joined.map((j) => (
+                    <TableRow key={j.id} hover>
+                      <TableCell>{j.name}</TableCell>
+                      <TableCell align="right">{j.norad_id}</TableCell>
+                      <TableCell align="right" title={j.fetched_at || ""}>{fmtDT(j.fetched_at)}</TableCell>
+                      <TableCell align="right" title={j.epoch || ""}>{fmtDT(j.epoch)}</TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" title="轨道信息" onClick={() => openOrbit(Number(j.norad_id))} sx={{ color: "primary.main", bgcolor: "rgba(25,118,210,0.12)", "&:hover": { bgcolor: "primary.main", color: "#fff" } }}>
+                          <PublicIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton size="small" title="卫星信息" onClick={() => openInfo(Number(j.norad_id))} sx={{ color: "primary.main", bgcolor: "rgba(25,118,210,0.12)", "&:hover": { bgcolor: "primary.main", color: "#fff" } }}>
+                          <ArticleIcon fontSize="small" />
+                        </IconButton>
+                        {!j.builtin && (
+                          <IconButton
+                            size="small"
+                            title="移除"
+                            onClick={() => handleDeactivate(j.id)}
+                            sx={{ color: "error.main", bgcolor: "rgba(211,47,47,0.12)", "&:hover": { bgcolor: "error.main", color: "#fff" } }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
       </Box>
+
+      {/* 轨道信息弹窗：从 TLE 解析的轨道根数 + TLE 原文 */}
+      <Dialog open={orbitOpen} onClose={closeOrbit} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ pb: 1 }}>
+          {detail?.name || ""}
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            NORAD {detail?.norad_id ?? detailNorad} · {detail?.source || ""}
+          </Typography>
+        </DialogTitle>
+        <DialogContent dividers>
+          {detailLoading ? (
+            <Typography variant="body2" color="text.secondary">加载中…</Typography>
+          ) : detailError ? (
+            <Typography variant="body2" color="error">{detailError}</Typography>
+          ) : detail ? (
+            <>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>轨道参数</Typography>
+              <Box component="div" sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
+                {Object.entries(ORBIT_LABELS).map(([key, label]) => (
+                  <Box
+                    key={key}
+                    sx={{
+                      display: "flex", justifyContent: "space-between", py: 0.5,
+                      borderBottom: "1px dashed", borderColor: "divider",
+                    }}
+                  >
+                    <Typography variant="body2" color="text.secondary">{label}</Typography>
+                    <Typography variant="body2" sx={{ ml: 1, textAlign: "right", wordBreak: "break-all" }}>
+                      {detail.orbit?.[key] ?? "—"}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>TLE</Typography>
+                <Typography variant="caption" sx={{ fontFamily: "monospace", wordBreak: "break-all", display: "block", lineHeight: 1.6 }}>
+                  {detail.tle1}
+                  <br />
+                  {detail.tle2}
+                </Typography>
+              </Box>
+            </>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeOrbit}>关闭</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 卫星档案信息弹窗：SatNOGS 基本信息 + AMSAT 频率（本地缓存，可强制刷新） */}
+      <Dialog open={infoOpen} onClose={closeInfo} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ pb: 1 }}>
+          卫星信息
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            NORAD {detailNorad}
+          </Typography>
+        </DialogTitle>
+        <DialogContent dividers>
+          {infoLoading ? (
+            <Typography variant="body2" color="text.secondary">加载档案信息…</Typography>
+          ) : infoError ? (
+            <Typography variant="body2" color="error">{infoError}</Typography>
+          ) : info && info.found ? (
+            <>
+              {info.image_url ? (
+                <Box sx={{ display: "flex", justifyContent: "center", mb: 1.5 }}>
+                  <Box
+                    component="img"
+                    src={info.image_url}
+                    alt={info.names || "卫星图片"}
+                    onError={(e) => { e.target.style.display = "none"; }}
+                    sx={{
+                      maxWidth: "100%", maxHeight: 180,
+                      borderRadius: 1, border: "1px solid",
+                      borderColor: "divider", objectFit: "contain",
+                    }}
+                  />
+                </Box>
+              ) : null}
+              <Box component="div" sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
+                {[
+                  ["别名", info.names],
+                  ["状态", info.status],
+                  ["发射日期", info.launch_date ? new Date(info.launch_date).toLocaleDateString("zh-CN") : ""],
+                  ["运营商", info.operator],
+                  ["所属国家", info.countries],
+                  ["遥测解码器", info.telemetries?.join("、")],
+                ].map(([label, value]) => (
+                  <Box key={label} sx={{ display: "flex", justifyContent: "space-between", py: 0.5, borderBottom: "1px dashed", borderColor: "divider" }}>
+                    <Typography variant="body2" color="text.secondary">{label}</Typography>
+                    <Typography variant="body2" sx={{ ml: 1, textAlign: "right", wordBreak: "break-all" }}>{value || "—"}</Typography>
+                  </Box>
+                ))}
+              </Box>
+              {info.website ? (
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  官网:{" "}
+                  <a href={info.website} target="_blank" rel="noreferrer" style={{ color: "#90caf9", wordBreak: "break-all" }}>
+                    {info.website}
+                  </a>
+                </Typography>
+              ) : null}
+              {(info.frequencies && info.frequencies.length > 0) && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>业余频率</Typography>
+                  {info.frequencies.map((f, i) => (
+                    <Typography key={i} variant="body2" sx={{ mb: 0.25 }}>
+                      上行 {f.uplink || "—"} · 下行 {f.downlink || "—"} · 信标 {f.beacon || "—"} · {f.mode || ""}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                最近更新 {fmtDT(info.fetched_at)}（本地缓存）
+              </Typography>
+            </>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              该数据源暂未收录此卫星的档案信息。
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeInfo}>关闭</Button>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={handleRefreshInfo}
+            disabled={infoLoading || infoRefreshing}
+          >
+            {infoRefreshing ? "刷新中…" : "强制刷新档案"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -100,5 +100,7 @@ def test_satellites_list(client):
     r = client.get("/api/satellites")
     assert r.status_code == 200
     sats = r.json()["satellites"]
-    assert any(s["id"] == "fo29" for s in sats)
     assert any(s["id"] == "iss" for s in sats)
+    assert any(s["id"] == "css" for s in sats)
+    # FO-29 已非内置，默认已加入列表不应包含它
+    assert not any(s["id"] == "fo29" for s in sats)

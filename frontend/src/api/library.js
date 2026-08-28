@@ -16,3 +16,23 @@ export function downloadSource(key) {
 export function fetchLibraryEntries(params = {}) {
   return httpGet("/api/library/entries", params);
 }
+
+// 库内指定卫星的详情（基础字段 + 从 TLE 解析的轨道根数）
+export function fetchLibraryDetail(noradId) {
+  return httpGet("/api/library/detail", { norad_id: noradId });
+}
+
+// 库内指定卫星的档案信息（SatNOGS + AMSAT 频率；后端缓存，refresh 强制联网）
+export function fetchLibraryInfo(noradId, refresh = false) {
+  return httpGet("/api/library/info", { norad_id: noradId, refresh: refresh ? "true" : "false" });
+}
+
+// 把库内某星加入"已加入"列表
+export function activateSatellite(noradId) {
+  return httpPost("/api/library/activate", { norad_id: noradId });
+}
+
+// 把某星从"已加入"列表移除（内置星不可删）
+export function deactivateSatellite(id) {
+  return httpPost("/api/library/deactivate", { id });
+}

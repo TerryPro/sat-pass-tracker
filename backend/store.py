@@ -65,7 +65,6 @@ _SATINFO_FILE = _DATA_DIR / "satellite_info.json"  # 卫星介绍/频率缓存
 
 # 内置卫星（不可删除）：可从网络导入更多卫星（按 NORAD 目录号）
 _BUILTIN_SATELLITES = [
-    {"id": "fo29", "name": "FO-29 (JAS-2)", "norad_id": 24278, "builtin": True},
     {"id": "iss", "name": "国际空间站 ISS", "norad_id": 25544, "builtin": True},
     {"id": "css", "name": "中国空间站 CSS", "norad_id": 48274, "builtin": True},
 ]
