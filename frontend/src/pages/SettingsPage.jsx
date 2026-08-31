@@ -27,6 +27,7 @@ export default function SettingsPage() {
   const showDashedSetting = useSelector(
     (s) => (s.settings.values?.terminator_show_dashed ?? true) === true
   );
+  const timeDisplaySetting = useSelector((s) => s.settings.values?.time_display || "utc");
   const reduxStations = useSelector((s) => s.settings.values?.stations);
   const satellites = useSelector((s) => s.settings.values?.satellites || BUILTIN_SATELLITES);
   const [form, setForm] = useState(() => ({
@@ -39,6 +40,8 @@ export default function SettingsPage() {
     sample_interval: savedSettings?.sample_interval ?? params.sample_interval,
     theme: themeSetting,
     terminator_show_dashed: showDashedSetting,
+    time_display: timeDisplaySetting, // utc | local：界面时间显示时区
+    orbit_color: savedSettings?.orbit_color || "rgba(255,180,70,0.55)", // 运行态势轨道线颜色
   }));
   // 字段级"用户是否主动编辑过"标记：
   // - terminator_show_dashed：用户手动点过 Switch 后置 true；保存成功后清 false，允许后续从 Redux 回填。
@@ -110,12 +113,14 @@ export default function SettingsPage() {
     lat: src.lat, lon: src.lon, alt: src.alt,
     satellite: src.satellite, hours: src.hours, sample_interval: src.sample_interval,
     theme: src.theme, terminator_show_dashed: src.terminator_show_dashed,
+    time_display: src.time_display, orbit_color: src.orbit_color,
   });
   const sameForm = (a, b) =>
     a.lat === b.lat && a.lon === b.lon && a.alt === b.alt &&
     a.satellite === b.satellite && a.hours === b.hours &&
     a.sample_interval === b.sample_interval &&
-    a.theme === b.theme && a.terminator_show_dashed === b.terminator_show_dashed;
+    a.theme === b.theme && a.terminator_show_dashed === b.terminator_show_dashed &&
+    a.time_display === b.time_display && a.orbit_color === b.orbit_color;
 
   const persistedRef = useRef(null); // 最近一次已持久化/已加载的表单字段快照
   const initedRef = useRef(false);   // 是否已用后端值初始化过表单（只一次）
@@ -145,15 +150,15 @@ export default function SettingsPage() {
     return () => clearTimeout(id);
   }, [
     form.lat, form.lon, form.alt, form.satellite, form.hours,
-    form.sample_interval, form.theme, form.terminator_show_dashed, dispatch,
+    form.sample_interval, form.theme, form.terminator_show_dashed, form.time_display, form.orbit_color, dispatch,
   ]);
 
   const setField = (key) => (e) => {
     const raw = e.target.value;
     const v = NUMERIC_KEYS.includes(key) ? Number(raw) : raw;
     setForm((f) => ({ ...f, [key]: v }));
-    // 主题即时生效（不点保存也立即切换界面）
-    if (key === "theme") dispatch(setLocalSettings({ theme: v }));
+    // 外观类即时生效（不点保存也立即应用）
+    if (key === "theme" || key === "time_display" || key === "orbit_color") dispatch(setLocalSettings({ [key]: v }));
   };
 
   // 布尔字段：从 Switch 读取 checked（比如晨昏线显示相关）；手动改动后标记 dirty，防止 Redux 立即覆盖
@@ -182,6 +187,7 @@ export default function SettingsPage() {
           alt: form.alt,
           theme: form.theme,
           terminator_show_dashed: form.terminator_show_dashed,
+          time_display: form.time_display,
         })
       ).unwrap();
       const { stations: _stations, theme: _theme, ...trackParams } = saved;
@@ -194,6 +200,7 @@ export default function SettingsPage() {
         ...persistedRef.current,
         lat: form.lat, lon: form.lon, alt: form.alt,
         theme: form.theme, terminator_show_dashed: form.terminator_show_dashed,
+        time_display: form.time_display,
       };
       setSaved(true);
     } catch (e) {

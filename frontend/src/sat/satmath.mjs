@@ -69,14 +69,43 @@ export function subpoint(s, date) {
 export function eciPosition(s, date) {
   try {
     const pos = propagate(s.satrec, date).position;
-    if (!pos || typeof pos.x !== "number" || !isFinite(pos.x)
-        || !isFinite(pos.y) || !isFinite(pos.z)) {
-      return { x: 0, y: 0, z: 0, isValid: false };
-    }
     return { x: pos.x, y: pos.y, z: pos.z, isValid: true };
   } catch (_) {
     return { x: 0, y: 0, z: 0, isValid: false };
   }
+}
+
+/**
+ * 轨道要素（由 SGP4 平均根数 satrec 解析）：
+ * 倾角/升交点赤经/近地点幅角（度）、偏心率、轨道周期（分）、近地点/远地点高度（km）。
+ */
+export function orbitElements(satrec) {
+  const mu = 398600.8; // 地球引力常数 km³/s²
+  const nRadMin = satrec.no || 0; // satellite.js：no 为平均运动（rad/min）
+  const nRadSec = nRadMin / 60;   // rad/s
+  const a = nRadSec ? Math.cbrt(mu / (nRadSec * nRadSec)) : 0; // 半长轴 km
+  const e = satrec.ecco || 0;
+  const Re = 6378.137; // WGS84 赤道半径 km
+  return {
+    inclDeg: (satrec.inclo || 0) * (180 / Math.PI),
+    raanDeg: (satrec.nodeo || 0) * (180 / Math.PI),
+    argpDeg: (satrec.argpo || 0) * (180 / Math.PI),
+    ecc: e,
+    periodMin: nRadMin ? (2 * Math.PI) / nRadMin : 0,
+    perigeeKm: a * (1 - e) - Re,
+    apogeeKm: a * (1 + e) - Re,
+  };
+}
+
+/** 某时刻的速度标量（km/s） */
+export function speedAt(satrec, date) {
+  try {
+    const v = propagate(satrec, date).velocity;
+    if (v && typeof v.x === "number" && isFinite(v.x)) {
+      return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    }
+  } catch (_) {}
+  return null;
 }
 
 /**
@@ -101,7 +130,7 @@ export function sampleEci(s, start, minutes, stepSec) {
   try {
     for (let ms = 0; ms <= totalMs; ms += stepSec * 1000) {
       const p = propagate(s.satrec, new Date(start.getTime() + ms)).position;
-      if (p && typeof p.x === "number" && isFinite(p.x) && isFinite(p.y) && isFinite(p.z)) {
+      if (p && typeof p.x === "number" && isFinite(p.x)) {
         pts.push({ t: ms, eci: { x: p.x, y: p.y, z: p.z } });
       }
     }
@@ -109,6 +138,70 @@ export function sampleEci(s, start, minutes, stepSec) {
     /* 忽略单点失败 */
   }
   return pts;
+}
+
+/**
+ * 一次性预采样一组卫星的「整圈」ECI 轨道，并记录轨道周期与起点时刻。
+ * 播放/拖动时用 interpEciAtMs 插值取位，避免每帧对全组跑 SGP4（参考 satvis 的"烘焙轨道"思路）。
+ * @param {Array<{norad,name,satrec}>} sats
+ * @param {Date} start 采样起点（一般取当前时刻）
+ * @param {number} stepSec 采样步长（秒），默认 60
+ * @param {number} limit 最多缓存几颗（超限截断，控内存）
+ * @returns {Array<{norad,name,refT,periodMs,stepMs,samples}>}
+ *   samples: [{ dt, eci:{x,y,z} }]，dt 为相对 start 的毫秒数
+ */
+export function buildOrbitCache(sats, start, stepSec = 60, limit = MAX_ALL_PINS) {
+  const refT = start.getTime();
+  const out = [];
+  // 每圈采样点上限：GEO（24h 周期）若固定 60s 步长会采 1441 点/颗，800 颗直接爆炸，
+  // 这里按周期自适应加大步长，保证每圈 ≤ MAX_SAMPLES 点（LEO 仍约 60s/点）
+  const MAX_SAMPLES = 256;
+  for (const s of sats || []) {
+    // satellite.js v6 未暴露 period，由平均角速度 satrec.no(rad/min) 推算轨道周期
+    const periodMs = (s.satrec.no ? (Math.PI * 2) / s.satrec.no : 90) * 60000;
+    let stepMs = stepSec * 1000;
+    if (periodMs / stepMs > MAX_SAMPLES) stepMs = Math.ceil(periodMs / MAX_SAMPLES);
+    const steps = Math.ceil(periodMs / stepMs);
+    const samples = [];
+    let ok = true;
+    for (let i = 0; i <= steps; i++) {
+      const p = propagate(s.satrec, new Date(refT + i * stepMs)).position;
+      if (p && typeof p.x === "number" && isFinite(p.x)) {
+        samples.push({ dt: i * stepMs, eci: { x: p.x, y: p.y, z: p.z } });
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if (ok && samples.length >= 2) {
+      out.push({ norad: s.norad, name: s.name, refT, periodMs, stepMs, samples });
+    }
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * 用轨道缓存求某颗星在任意时刻的 ECI 位置（线性插值，绕周期取模，闭环无缝）。
+ * @param {ReturnType<typeof buildOrbitCache>[number]} cache
+ * @param {number} ms 目标时刻（毫秒时间戳）
+ * @returns {{x,y,z}}
+ */
+export function interpEciAtMs(cache, ms) {
+  const periodMs = cache.periodMs;
+  const offset = ((ms - cache.refT) % periodMs + periodMs) % periodMs;
+  const stepMs = cache.stepMs;
+  const i0 = Math.floor(offset / stepMs);
+  const a = Math.min(i0, cache.samples.length - 1);
+  const b = a + 1 >= cache.samples.length ? 0 : a + 1;
+  const s0 = cache.samples[a];
+  const s1 = cache.samples[b];
+  const frac = (offset - a * stepMs) / stepMs;
+  return {
+    x: s0.eci.x + (s1.eci.x - s0.eci.x) * frac,
+    y: s0.eci.y + (s1.eci.y - s0.eci.y) * frac,
+    z: s0.eci.z + (s1.eci.z - s0.eci.z) * frac,
+  };
 }
 
 /**

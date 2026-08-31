@@ -127,6 +127,10 @@ DEFAULT_SETTINGS = {
     "satellites": list(_BUILTIN_SATELLITES),
     # 2D 地图晨昏线显示项：橘黄虚线分界（叠加在夜影之上）
     "terminator_show_dashed": True,
+    # 界面时间显示时区：utc（默认）| local
+    "time_display": "utc",
+    # 运行态势页轨道线颜色（CSS 颜色字符串）
+    "orbit_color": "rgba(255,180,70,0.55)",
 }
 
 

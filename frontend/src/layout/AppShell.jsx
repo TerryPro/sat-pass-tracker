@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
@@ -15,11 +15,21 @@ import Typography from "@mui/material/Typography";
 import MenuIcon from "@mui/icons-material/Menu";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { getNavigation } from "../config/navigation.jsx";
 import { APP_VERSION } from "../version.js";
 
 const DRAWER_EXPANDED = 240;
 const DRAWER_COLLAPSED = 56;
+
+// 当前时间格式化：utc → UTC 时间；local → 本地时间
+function fmtNow(date, mode = "utc") {
+  const p = (n) => String(n).padStart(2, "0");
+  if (mode === "local") {
+    return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())} 本地`;
+  }
+  return `${date.getUTCFullYear()}-${p(date.getUTCMonth() + 1)}-${p(date.getUTCDate())} ${p(date.getUTCHours())}:${p(date.getUTCMinutes())}:${p(date.getUTCSeconds())} UTC`;
+}
 
 // 全局应用外壳：顶部标题栏 + 左侧可折叠导航菜单 + 页面内容（Outlet）
 // 沿用 Ground Station 的布局风格（AppBar + Drawer），供多个功能页面共用
@@ -29,6 +39,14 @@ export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const navigation = getNavigation();
+
+  // 标题栏当前时间：按系统配置显示 UTC 或本地时间（每秒刷新）
+  const timeDisplay = useSelector((s) => s.settings.values?.time_display || "utc");
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleToggle = () => {
     if (window.innerWidth < 600) setMobileOpen((v) => !v);
@@ -40,7 +58,11 @@ export default function AppShell() {
     if (window.innerWidth < 600) setMobileOpen(false);
   };
 
-  const isActive = (segment) => location.pathname.startsWith(`/${segment}`);
+  // 按路径段精确匹配：/satellites3d 不应让 /satellites（卫星管理）也高亮
+  const isActive = (segment) => {
+    const p = location.pathname;
+    return p === `/${segment}` || p.startsWith(`/${segment}/`);
+  };
 
   // 导航内容（桌面端与移动端共用）
   const navContent = (expanded) => (
@@ -94,8 +116,12 @@ export default function AppShell() {
           <IconButton color="inherit" aria-label="切换侧边菜单" edge="start" onClick={handleToggle} sx={{ mr: 1.5 }}>
             {open || mobileOpen ? <ChevronLeftIcon /> : <MenuIcon />}
           </IconButton>
-          <Typography variant="h6" component="div" sx={{ fontSize: 17, fontWeight: 600, flexGrow: 1 }}>
+          <Typography variant="h6" component="div" sx={{ fontSize: 17, fontWeight: 600, flexGrow: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             🛰️ 卫星过境跟踪
+          </Typography>
+          {/* 最右侧当前时间（UTC / 本地，跟随系统配置） */}
+          <Typography variant="h6" component="div" sx={{ flexShrink: 0, fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", ml: 1 }}>
+            {fmtNow(now, timeDisplay)}
           </Typography>
         </Toolbar>
       </AppBar>

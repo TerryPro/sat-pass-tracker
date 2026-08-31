@@ -9,7 +9,7 @@ export function getNavigation() {
   return [
     { segment: "track", title: "卫星轨迹", icon: <PublicIcon /> },
     { segment: "satellites", title: "卫星管理", icon: <SatelliteAltIcon /> },
-    { segment: "satellites3d", title: "卫星星座3D", icon: <ExploreIcon /> },
+    { segment: "satellites3d", title: "运行态势", icon: <ExploreIcon /> },
     { segment: "settings", title: "系统配置", icon: <SettingsIcon /> },
   ];
 }

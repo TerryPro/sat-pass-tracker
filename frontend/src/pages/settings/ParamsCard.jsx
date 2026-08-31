@@ -14,6 +14,16 @@ import { THEMES, HOUR_OPTIONS, SAMPLE_OPTIONS } from "../../constants.js";
 import { CardTitle } from "./parts.jsx";
 import { hourLabel, sampleLabel, inputSx } from "./helpers.js";
 
+// 运行态势页轨道线颜色预设
+const ORBIT_COLORS = [
+  { key: "rgba(255,180,70,0.55)", label: "橙色（默认）" },
+  { key: "rgba(255,90,90,0.6)", label: "红色" },
+  { key: "rgba(90,200,255,0.6)", label: "青色" },
+  { key: "rgba(120,230,120,0.6)", label: "绿色" },
+  { key: "rgba(240,240,240,0.7)", label: "白色" },
+  { key: "rgba(210,140,255,0.6)", label: "紫色" },
+];
+
 export default function ParamsCard({ form, satellites, onField, onBoolField, onSave }) {
   return (
     <Paper sx={{ p: 2.5, height: "100%", display: "flex", flexDirection: "column" }}>
@@ -84,6 +94,33 @@ export default function ParamsCard({ form, satellites, onField, onBoolField, onS
       >
         {THEMES.map((t) => (
           <MenuItem key={t.key} value={t.key}>{t.label}</MenuItem>
+        ))}
+      </TextField>
+      <TextField
+        select
+        label="时间显示"
+        size="small"
+        fullWidth
+        value={form.time_display}
+        onChange={onField("time_display")}
+        sx={{ my: 0.75 }}
+        title="界面时间显示采用 UTC 还是本地时区"
+      >
+        <MenuItem value="utc">UTC 时间</MenuItem>
+        <MenuItem value="local">本地时间</MenuItem>
+      </TextField>
+      <TextField
+        select
+        label="轨道线颜色"
+        size="small"
+        fullWidth
+        value={form.orbit_color || "rgba(255,180,70,0.55)"}
+        onChange={onField("orbit_color")}
+        sx={{ my: 0.75 }}
+        title="运行态势页面中卫星轨道线的颜色"
+      >
+        {ORBIT_COLORS.map((c) => (
+          <MenuItem key={c.key} value={c.key}>{c.label}</MenuItem>
         ))}
       </TextField>
       <FormControlLabel
