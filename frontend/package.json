@@ -23,6 +23,7 @@
     "react-dom": "^18.3.1",
     "react-redux": "^9.3.0",
     "react-router-dom": "^7.18.2",
+    "satellite.js": "^6.0.2",
     "socket.io-client": "^4.7.5",
     "world-atlas": "^2.0.2"
   },
