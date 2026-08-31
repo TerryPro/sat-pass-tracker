@@ -131,6 +131,8 @@ DEFAULT_SETTINGS = {
     "time_display": "utc",
     # 运行态势页轨道线颜色（CSS 颜色字符串）
     "orbit_color": "rgba(255,180,70,0.55)",
+    # 轨道数据获取模式：online（联网优先，默认）| builtin（仅内置/本地缓存，不主动联网）
+    "tle_mode": "online",
 }
 
 

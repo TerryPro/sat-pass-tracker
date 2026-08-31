@@ -47,7 +47,7 @@ import {
   clearEntries,
 } from "../slices/librarySlice.js";
 import { fetchLibraryDetail, fetchLibraryInfo, activateSatellite, deactivateSatellite } from "../api/library.js";
-import { fetchSatellites } from "../api";
+import { fetchSatellites, refreshSatellite, refreshAllSatellites } from "../api";
 import { ORBIT_LABELS } from "../constants.js";
 
 // 分类 meta 的图标 + 主色（六类，与后端 lib.CELESTRAK_CATEGORIES 的 key 对应）
@@ -137,6 +137,44 @@ export default function SatellitePage() {
       await loadJoined();
     } catch (e) {
       setJoinedError(e.message || "移除失败");
+    }
+  };
+
+  // 刷新轨道数据（TLE）：单颗 / 全部，从网络重新拉取并持久化（原设置页卫星卡片功能迁移至此）
+  const [refreshingId, setRefreshingId] = useState(null); // 正在刷新的 norad
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const [joinedNotice, setJoinedNotice] = useState("");   // 成功提示（短暂显示）
+
+  const showJoinedNotice = (msg) => {
+    setJoinedNotice(msg);
+    setTimeout(() => setJoinedNotice(""), 3000);
+  };
+
+  const handleRefresh = async (noradId) => {
+    setRefreshingId(noradId);
+    setJoinedError("");
+    try {
+      await refreshSatellite(noradId);
+      await loadJoined();
+      showJoinedNotice("轨道数据已更新");
+    } catch (e) {
+      setJoinedError(e.message || "刷新轨道数据失败");
+    } finally {
+      setRefreshingId(null);
+    }
+  };
+
+  const handleRefreshAll = async () => {
+    setRefreshingAll(true);
+    setJoinedError("");
+    try {
+      const res = await refreshAllSatellites();
+      await loadJoined();
+      showJoinedNotice(`轨道数据更新完成：${res.updated} 颗成功${res.failed > 0 ? `，${res.failed} 颗失败` : ""}`);
+    } catch (e) {
+      setJoinedError(e.message || "批量更新失败");
+    } finally {
+      setRefreshingAll(false);
     }
   };
 
@@ -232,7 +270,7 @@ export default function SatellitePage() {
         {/* 数据源面板（左，较窄）：下载/更新各组的原始 TLE 文件 */}
         <Paper
           variant="outlined"
-          sx={{ p: 1.5, flex: "0 0 auto", width: { xs: "100%", md: 320 }, display: "flex", flexDirection: "column", minHeight: 0, overflow: "auto" }}
+          sx={{ p: 1.5, flex: "0 0 auto", width: { xs: "100%", md: 300 }, display: "flex", flexDirection: "column", minHeight: 0, overflow: "auto" }}
         >
           <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5 }}>
             数据源
@@ -489,19 +527,32 @@ export default function SatellitePage() {
         {/* 已加入卫星（配置页"卫星管理"表格同源；本页可从数据源浏览列点「加入」添加） */}
         <Paper
           variant="outlined"
-          sx={{ p: 1.5, flex: "0 0 auto", width: { xs: "100%", md: 560 }, display: "flex", flexDirection: "column", minHeight: 0 }}
+          sx={{ p: 1.5, flex: "0 0 auto", width: { xs: "100%", md: 660 }, display: "flex", flexDirection: "column", minHeight: 0 }}
         >
           <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 0.5, flexWrap: "wrap" }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               已加入卫星
             </Typography>
-            {joinedError && <Typography variant="caption" color="error">{joinedError}</Typography>}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              {joinedError && <Typography variant="caption" color="error">{joinedError}</Typography>}
+              {joinedNotice && <Typography variant="caption" color="success.main">{joinedNotice}</Typography>}
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<RefreshIcon />}
+                onClick={handleRefreshAll}
+                disabled={refreshingAll || joinedLoading}
+                title="从网络批量更新全部卫星的轨道数据"
+              >
+                {refreshingAll ? "更新中…" : "全部刷新"}
+              </Button>
+            </Box>
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-            已选用卫星，支持查看轨道/档案与移除
+            已选用卫星，支持查看轨道/档案、刷新轨道数据与移除
           </Typography>
           <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-            <Table size="small" stickyHeader>
+            <Table size="small" stickyHeader sx={{ minWidth: 620 }}>
               <TableHead>
                 <TableRow>
                   <TableCell>名称</TableCell>
@@ -529,6 +580,15 @@ export default function SatellitePage() {
                         </IconButton>
                         <IconButton size="small" title="卫星信息" onClick={() => openInfo(Number(j.norad_id))} sx={{ color: "primary.main", bgcolor: "rgba(25,118,210,0.12)", "&:hover": { bgcolor: "primary.main", color: "#fff" } }}>
                           <ArticleIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          title="刷新轨道数据"
+                          onClick={() => handleRefresh(Number(j.norad_id))}
+                          disabled={refreshingId === j.norad_id}
+                          sx={{ color: "success.main", bgcolor: "rgba(76,175,80,0.12)", "&:hover": { bgcolor: "success.main", color: "#fff" } }}
+                        >
+                          <RefreshIcon fontSize="small" />
                         </IconButton>
                         {!j.builtin && (
                           <IconButton

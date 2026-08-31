@@ -1,7 +1,8 @@
-// 设置页容器：地面站管理 / 参数设置 / 卫星管理 三张独立卡片。
-// 仅保留跨卡片共享的状态（表单、站点列表、卫星表格、通知条）与保存/自动保存逻辑；
+// 设置页容器：地面站管理 / 参数设置 两张独立卡片。
+// 仅保留跨卡片共享的状态（表单、站点列表、通知条）与保存/自动保存逻辑；
 // 各卡片的对话框与本地状态内聚在 pages/settings/ 下的组件中。
-import React, { useCallback, useEffect, useRef, useState } from "react";
+// 卫星管理已迁移到独立页面（/satellites），不再在此重复。
+import React, { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
 import Snackbar from "@mui/material/Snackbar";
@@ -9,11 +10,9 @@ import Alert from "@mui/material/Alert";
 import { useDispatch, useSelector } from "react-redux";
 import { loadPasses, updateParams } from "../slices/trackSlice.js";
 import { persistSettings, setLocalSettings } from "../slices/settingsSlice.js";
-import { fetchSatellites } from "../api";
 import { BUILTIN_SATELLITES, BUILTIN_STATIONS } from "../constants.js";
 import StationCard from "./settings/StationCard.jsx";
 import ParamsCard from "./settings/ParamsCard.jsx";
-import SatelliteCard from "./settings/SatelliteCard.jsx";
 
 // 数值字段转 Number，其余（satellite/theme）保持字符串
 const NUMERIC_KEYS = ["lat", "lon", "alt", "hours", "sample_interval"];
@@ -42,6 +41,7 @@ export default function SettingsPage() {
     terminator_show_dashed: showDashedSetting,
     time_display: timeDisplaySetting, // utc | local：界面时间显示时区
     orbit_color: savedSettings?.orbit_color || "rgba(255,180,70,0.55)", // 运行态势轨道线颜色
+    tle_mode: savedSettings?.tle_mode || "online", // online（联网优先）| builtin（内置/本地，不联网）
   }));
   // 字段级"用户是否主动编辑过"标记：
   // - terminator_show_dashed：用户手动点过 Switch 后置 true；保存成功后清 false，允许后续从 Redux 回填。
@@ -54,24 +54,10 @@ export default function SettingsPage() {
         (s) => s.lat === params.lat && s.lon === params.lon && s.alt === params.alt
       )?.id || null
   );
-  const [notice, setNotice] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  // 卫星表格数据（含 TLE 更新时间 / 轨道历元），挂载时从 /api/satellites 拉取
-  const [satList, setSatList] = useState([]);
-  const loadSatList = useCallback(async () => {
-    try {
-      const res = await fetchSatellites();
-      setSatList(res.satellites || []);
-    } catch (e) {
-      // 拉取失败时表格回退到 settings 中的基础卫星数据
-    }
-  }, []);
-  useEffect(() => {
-    loadSatList();
-  }, [loadSatList]);
 
-  // 1) 站点列表 + 选中项同步：每次 Redux stations 变更都刷新（初始加载 / 保存站点 / 导入删除卫星后的重建）
+  // 1) 站点列表 + 选中项同步：每次 Redux stations 变更都刷新（初始加载 / 保存站点 / 删除站点）
   useEffect(() => {
     if (!reduxStations) return;
     setStations(reduxStations);
@@ -114,13 +100,15 @@ export default function SettingsPage() {
     satellite: src.satellite, hours: src.hours, sample_interval: src.sample_interval,
     theme: src.theme, terminator_show_dashed: src.terminator_show_dashed,
     time_display: src.time_display, orbit_color: src.orbit_color,
+    tle_mode: src.tle_mode,
   });
   const sameForm = (a, b) =>
     a.lat === b.lat && a.lon === b.lon && a.alt === b.alt &&
     a.satellite === b.satellite && a.hours === b.hours &&
     a.sample_interval === b.sample_interval &&
     a.theme === b.theme && a.terminator_show_dashed === b.terminator_show_dashed &&
-    a.time_display === b.time_display && a.orbit_color === b.orbit_color;
+    a.time_display === b.time_display && a.orbit_color === b.orbit_color &&
+    a.tle_mode === b.tle_mode;
 
   const persistedRef = useRef(null); // 最近一次已持久化/已加载的表单字段快照
   const initedRef = useRef(false);   // 是否已用后端值初始化过表单（只一次）
@@ -150,7 +138,7 @@ export default function SettingsPage() {
     return () => clearTimeout(id);
   }, [
     form.lat, form.lon, form.alt, form.satellite, form.hours,
-    form.sample_interval, form.theme, form.terminator_show_dashed, form.time_display, form.orbit_color, dispatch,
+    form.sample_interval, form.theme, form.terminator_show_dashed, form.time_display, form.orbit_color, form.tle_mode, dispatch,
   ]);
 
   const setField = (key) => (e) => {
@@ -254,25 +242,8 @@ export default function SettingsPage() {
             onSave={handleSave}
           />
         </Grid>
-
-        {/* 卡片 3：卫星管理（独立容器） */}
-        <Grid size={{ xs: 12 }}>
-          <SatelliteCard
-            satellites={satellites}
-            satList={satList}
-            onError={setError}
-            onNotice={setNotice}
-            onSaved={setSaved}
-            onReload={loadSatList}
-          />
-        </Grid>
       </Grid>
 
-      <Snackbar open={!!notice} autoHideDuration={3000} onClose={() => setNotice("")}>
-        <Alert severity="info" variant="filled" onClose={() => setNotice("")}>
-          {notice}
-        </Alert>
-      </Snackbar>
       <Snackbar open={saved} autoHideDuration={2500} onClose={() => setSaved(false)}>
         <Alert severity="success" variant="filled" onClose={() => setSaved(false)}>
           设置已保存并应用

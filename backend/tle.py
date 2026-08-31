@@ -11,8 +11,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Tuple
 
-from provider import fetch_latest_tle  # noqa: E402
-from store import _load_satellites, _load_tles, _save_tle  # noqa: E402
+from provider import fetch_latest_tle, get_builtin_tle  # noqa: E402
+from store import _load_satellites, _load_settings, _load_tles, _save_tle  # noqa: E402
 
 _TLE_CACHE_TTL = 3600.0  # 内存 TLE 缓存 1 小时（避免短时间重复请求）
 _TLE_VALID_SECONDS = 12 * 3600.0  # 持久化 TLE 有效期 12 小时，过期才联网更新
@@ -79,6 +79,8 @@ def _get_tle_cached(norad_id: int = 24278):
     """TLE 获取策略：内存缓存(1h) → 本地持久化(12h 有效) → 联网更新并落盘。
 
     返回 (name, tle1, tle2)。联网成功后写入 tles.json，重启后不再重复下载。
+    tle_mode=builtin（离线模式，设置页可切换）时跳过联网：直接用本地持久化
+    （不限新鲜度）或内置历史 TLE；仅当两者都无数据（用户导入的非内置卫星）才联网兜底。
     """
     now = time.time()
     key = f"tle_{norad_id}"
@@ -93,11 +95,37 @@ def _get_tle_cached(norad_id: int = 24278):
         _tle_cache[fetched_key] = float(saved.get("fetched_ts", now))
         _tle_source[norad_id] = str(saved.get("source", "cache"))
         return _tle_cache[key]
-    # 3) 联网获取最新 TLE，写入内存 + 持久化；在线失败用历史兜底并如实记录来源。
+    # 3) 获取最新 TLE，写入内存 + 持久化；在线失败用历史兜底并如实记录来源。
     #    用 per-NORAD 锁串行化这一段的网络拉取；持有锁后会做一次二次检查，
     #    避免并发请求对同一卫星重复联网（也避免多次写盘）。
     with _tle_fetch_lock(norad_id):
         if _tle_cache.get(key) and (now - _tle_cache.get(fetched_key, 0)) < _TLE_CACHE_TTL:
+            return _tle_cache[key]
+        # 离线模式：不主动联网，用本地缓存（不限新鲜度）或内置历史 TLE
+        if _load_settings().get("tle_mode") == "builtin":
+            saved = _load_tles().get(str(norad_id))
+            if saved:
+                name, tle1, tle2 = saved["name"], saved["tle1"], saved["tle2"]
+                _tle_source[norad_id] = str(saved.get("source", "cache"))
+            else:
+                builtin = get_builtin_tle(norad_id)
+                if builtin:
+                    name, tle1, tle2 = builtin
+                    _tle_source[norad_id] = "builtin"
+                else:
+                    # 本地与内置都没有（用户导入的非内置卫星）：联网兜底一次
+                    name, tle1, tle2, is_fallback = fetch_latest_tle(norad_id=norad_id)
+                    _tle_source[norad_id] = "fallback" if is_fallback else "online"
+            _tle_cache[key] = (name, tle1, tle2)
+            _tle_cache[fetched_key] = now
+            _save_tle(
+                norad_id,
+                _clean_sat_name(name),
+                tle1,
+                tle2,
+                now,
+                source=_tle_source[norad_id],
+            )
             return _tle_cache[key]
         name, tle1, tle2, is_fallback = fetch_latest_tle(norad_id=norad_id)
         _tle_cache[key] = (name, tle1, tle2)

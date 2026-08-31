@@ -78,6 +78,22 @@ export default function ParamsCard({ form, satellites, onField, onBoolField, onS
             ))}
         </TextField>
       </Box>
+      <TextField
+        select
+        label="轨道数据来源"
+        size="small"
+        fullWidth
+        value={form.tle_mode || "online"}
+        onChange={onField("tle_mode")}
+        sx={{ my: 0.75 }}
+        title="在线自动更新会联网获取最新轨道数据；内置/本地模式不联网，立即返回缓存或内置数据"
+      >
+        <MenuItem value="online">在线自动更新（默认）</MenuItem>
+        <MenuItem value="builtin">内置/本地缓存（离线，不联网）</MenuItem>
+      </TextField>
+      <Typography variant="caption" sx={{ display: "block", color: "text.secondary", mb: 0.5 }}>
+        内置/本地模式：使用本地缓存或内置历史轨道数据，计算更快、可离线；数据可能过时
+      </Typography>
 
       <Typography variant="subtitle1" sx={{ mt: 2.5, fontWeight: 600 }}>
         外观

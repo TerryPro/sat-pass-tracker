@@ -53,6 +53,15 @@ _SATELLITES = {
 }
 
 
+def get_builtin_tle(norad_id: int) -> Optional[Tuple[str, str, str]]:
+    """返回内置历史 TLE（(name, tle1, tle2)）；非内置卫星返回 None。
+
+    供离线模式（tle_mode=builtin）直接使用，不触发任何网络请求。
+    """
+    cfg = _SATELLITES.get(int(norad_id))
+    return cfg["fallback"] if cfg else None
+
+
 def _tle_sources(norad_id: int):
     """按 NORAD ID 生成候选 TLE 源列表。"""
     return [
