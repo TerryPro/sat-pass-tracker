@@ -46,3 +46,12 @@ backend/data/
 
 # Temp
 tmp/
+
+# reasonix 工具产物（会话缓存 / 配置 / 备份文件）
+.reasonix/
+reasonix.toml
+*.reasonix-tx-*.bak
+
+# 卫星数据与扫描工具产物（临时生成，不入库）
+_all_sats.json
+tools/
