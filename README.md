@@ -75,11 +75,11 @@ npm run preview      # 本地预览构建产物
 监听端口、默认坐标等已抽离为环境变量（后端见 [config.py](backend/config.py)，前端见 [vite.config.js](frontend/vite.config.js)），复制模板并按需修改（`.env` 不入库，`.env.example` 为模板）：
 
 ```bash
-cp backend/.env.example  backend/.env      # 后端：GS_HOST / GS_PORT / GS_DEFAULT_* / GS_DATA_DIR
+cp backend/.env.example  backend/.env      # 后端：GS_HOST / GS_PORT / GS_DEFAULT_* / GS_DATA_DIR / GS_CORS_ORIGINS
 cp frontend/.env.example frontend/.env     # 前端：VITE_DEV_PORT / VITE_API_PROXY_TARGET / VITE_DEFAULT_*
 ```
 
-- 后端：真实环境变量优先于 `.env` 文件，全部可省略（省略用代码内默认值）；`.env` 改动需重启后端。
+- 后端：真实环境变量优先于 `.env` 文件，全部可省略（省略用代码内默认值）；`.env` 改动需重启后端。CORS 默认只放行本地前端来源（`http://localhost:5173` / `http://127.0.0.1:5173`），跨机部署时用 `GS_CORS_ORIGINS` 显式列出前端来源（逗号分隔；设为 `*` 表示任意来源并自动关闭"携带凭据"）。
 - 前端：`.env` 改动需重启 vite；代理目标可指向远程后端（如 `VITE_API_PROXY_TARGET=http://192.168.x.x:8765`）。
 
 ## 测试

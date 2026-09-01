@@ -7,6 +7,7 @@
     GS_DEFAULT_LAT/LON/ALT_M         默认地面站坐标（设置缺失时的回退）
     GS_ON80DD_LAT/LON/ALT_M          内置 ON80DD 站点坐标
     GS_DATA_DIR                      运行时数据目录（settings.json 等）
+    GS_CORS_ORIGINS                  CORS 允许来源（逗号分隔；* 表示任意来源）
 """
 
 from __future__ import annotations
@@ -77,6 +78,24 @@ ON80DD_ALT_M = get_float("GS_ON80DD_ALT_M", 44.0)
 # 运行时数据目录（settings.json / tles.json / satellite_info.json）
 # ---------------------------------------------------------------
 DATA_DIR = Path(get("GS_DATA_DIR", str(Path(__file__).resolve().parent / "data")))
+
+# ---------------------------------------------------------------
+# CORS 允许来源（FastAPI 中间件与 Socket.IO 共用）
+# 逗号分隔的显式来源列表；默认只放行本地前端开发/预览端口（5173）。
+# 部署到公网时通过 GS_CORS_ORIGINS 显式列出前端实际来源，
+# 避免"通配符来源 + 携带凭据"这一不合规范的组合（浏览器会拒绝）。
+# ---------------------------------------------------------------
+def _parse_origins(raw: str) -> list:
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    return origins or ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+CORS_ORIGINS = _parse_origins(
+    get("GS_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+)
+# 通配符来源 + 凭据不合规范：显式来源时允许凭据，通配符时自动关闭凭据
+CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
+
 
 # ---------------------------------------------------------------
 # 应用版本：单一来源为仓库根 VERSION 文件（前端同样读取它显示）

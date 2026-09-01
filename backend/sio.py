@@ -7,6 +7,8 @@ Socket.IO 服务：连接即回发当前站点配置与最新位置；每 2s 广
 from __future__ import annotations
 
 import asyncio
+import config
+
 from concurrent.futures import ThreadPoolExecutor
 
 import socketio
@@ -18,7 +20,11 @@ from tle import _get_tle_cached, _resolve_satellite  # noqa: E402
 # 在线 Socket.IO 客户端
 _clients: set = set()
 
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+sio = socketio.AsyncServer(
+    async_mode="asgi",
+    cors_allowed_origins=config.CORS_ORIGINS,
+    cors_credentials=config.CORS_ALLOW_CREDENTIALS,
+)
 
 # 实时位置专用线程池（max_workers=1）：connect 回发与周期性广播共用。
 # 位置计算可能触发 TLE 联网（最坏数十秒），不能阻塞 asyncio 事件循环；

@@ -104,3 +104,35 @@ def test_satellites_list(client):
     assert any(s["id"] == "css" for s in sats)
     # FO-29 已非内置，默认已加入列表不应包含它
     assert not any(s["id"] == "fo29" for s in sats)
+
+
+def test_cors_allowed_origin(client):
+    """允许的来源：预检与普通请求都回显具体来源并携带凭据标记。"""
+    r = client.options(
+        "/api/settings",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert r.headers.get("access-control-allow-credentials") == "true"
+
+    r = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert r.headers.get("access-control-allow-credentials") == "true"
+
+
+def test_cors_disallowed_origin(client):
+    """未允许的来源：预检返回 400 且不携带 Allow-Origin 头。"""
+    r = client.options(
+        "/api/settings",
+        headers={
+            "Origin": "http://evil.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert r.status_code == 400
+    assert "access-control-allow-origin" not in r.headers

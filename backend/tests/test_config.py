@@ -45,3 +45,22 @@ def test_env_override_host(monkeypatch):
 def test_invalid_int_falls_back(monkeypatch):
     monkeypatch.setenv("GS_PORT", "abc")
     assert importlib.reload(config).PORT == 8765
+
+
+def test_cors_origins_default():
+    assert config.CORS_ORIGINS == ["http://localhost:5173", "http://127.0.0.1:5173"]
+    assert config.CORS_ALLOW_CREDENTIALS is True
+
+
+def test_cors_origins_env_override(monkeypatch):
+    monkeypatch.setenv("GS_CORS_ORIGINS", "http://a.example, http://b.example")
+    reloaded = importlib.reload(config)
+    assert reloaded.CORS_ORIGINS == ["http://a.example", "http://b.example"]
+    assert reloaded.CORS_ALLOW_CREDENTIALS is True
+
+
+def test_cors_wildcard_disables_credentials(monkeypatch):
+    monkeypatch.setenv("GS_CORS_ORIGINS", "*")
+    reloaded = importlib.reload(config)
+    assert reloaded.CORS_ORIGINS == ["*"]
+    assert reloaded.CORS_ALLOW_CREDENTIALS is False
