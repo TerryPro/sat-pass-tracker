@@ -8,13 +8,14 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import { Cesium, loadCesium } from "./cesiumGlobal.js";
-import { createViewer, loadImagery, resetCamera, createInertialCameraUpdate } from "./viewer.js";
-import { renderTrack, renderPasses, renderStation, renderRealPoint } from "./render.js";
+import { createViewer, setBasemap, resetCamera, createInertialCameraUpdate } from "./viewer.js";
+import { renderTrack, renderPasses, renderStationMarker, renderStationFootprint, renderRealPoint } from "./render.js";
 
 export default function Globe3D({
   params, gt, passes, activePass, currentPos, idx,
   onSetIdx, visibleHours, showVisibility, active, passMode, liveMode,
   eci = false, onEciChange, cameraDistM = 20000000,
+  basemap = "satellite", // 底图（Cesium key，与 2D/运行态势页共用，切换 2D/3D 保持一致）
 }) {
   const { lat, lon, alt, satellite } = params;
 
@@ -100,12 +101,16 @@ export default function Globe3D({
     viewerRef.current = viewer;
     createdRef.current = true;
 
+    // 超采样渲染：缓解 polyline 锯齿（提高分辨率换取线条平滑）
+    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 2);
+
+    // 底图：按 basemap（Cesium key）切换（与 2D/运行态势共用同一套）
+    setBasemap(viewer, basemap);
+
     // 容器尺寸变化（侧栏显隐 / 2D+3D 分栏 / 窗口缩放）时自动 resize
     const ro = new ResizeObserver(() => viewer.resize());
     ro.observe(containerRef.current);
     resizeObserverRef.current = ro;
-
-    loadImagery(viewer);
 
     // 初始视角：正顶视地面站，高度足够让整颗地球都可见
     resetCamera(viewer, lon, cameraDistM);
@@ -154,6 +159,13 @@ export default function Globe3D({
     return () => timers.forEach(clearTimeout);
   }, [active]);
 
+  // 底图切换（与 2D 共用 mapStyle，切 2D/3D 保持一致）
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || cesiumState !== "ready") return;
+    setBasemap(viewer, basemap);
+  }, [basemap, cesiumState]);
+
   // 地表轨迹 + 空间轨道线（随数据/显示时长重建）
   useEffect(() => {
     renderTrack({
@@ -161,6 +173,7 @@ export default function Globe3D({
       gt,
       visibleHours,
       eci,
+      groupByOrbit: false, // 整段一条、统一单色：避免后端按「±180° 经度跳变」误增 orbit 号导致断裂/颜色跳变
       entitiesRef: trackEntitiesRef,
     });
   }, [gt, visibleHours, active, eci, cesiumState]);
@@ -179,9 +192,19 @@ export default function Globe3D({
     });
   }, [activePass, gt, passes, passMode, visibleHours, active, eci, cesiumState]);
 
-  // 地面站标记 + 通视圆（随卫星高度/开关/视角重建）
+  // 地面站静态标记（仅站点坐标变化时重建，避免随实时位置高频重建闪烁）
   useEffect(() => {
-    renderStation({
+    renderStationMarker({
+      viewer: viewerRef.current,
+      lat,
+      lon,
+      stationRef: stationEntityRef,
+    });
+  }, [lat, lon, active, cesiumState]);
+
+  // 地面站通视圆（随卫星高度源/开关变化重建）
+  useEffect(() => {
+    renderStationFootprint({
       viewer: viewerRef.current,
       gt,
       lat,
@@ -190,10 +213,9 @@ export default function Globe3D({
       satellite,
       activePass,
       currentPos,
-      stationRef: stationEntityRef,
       footprintRef: footprintEntityRef,
     });
-  }, [lat, lon, showVisibility, satellite, activePass, currentPos, gt, active, eci, cesiumState]);
+  }, [showVisibility, satellite, activePass, currentPos, gt, active, eci, cesiumState]);
 
   // 卫星位置点（统一单标记）：实时模式用 currentPos，播放模式用时间轴点；统一橙色
   useEffect(() => {

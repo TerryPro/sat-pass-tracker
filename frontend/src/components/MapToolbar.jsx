@@ -21,6 +21,28 @@ function visibleHourOptions(hours) {
   return [...new Set(opts)].filter((h) => h > 0 && h < max).sort((a, b) => a - b);
 }
 
+// 底图样式选项：按渲染引擎区分（与运行态势页 Cesium 底图保持一致）
+const BASEMAP_OPTIONS = {
+  // OpenLayers 引擎：OL 底图样式（Map2D/mapStyles.js）
+  ol: [
+    { value: "dark", label: "暗色" },
+    { value: "light", label: "浅灰" },
+    { value: "satellite", label: "卫星" },
+    { value: "terrain", label: "地形" },
+    { value: "standard", label: "标准" },
+  ],
+  // Cesium 引擎：与运行态势页（SceneControls）完全一致的底图列表
+  cesium: [
+    { value: "satellite", label: "卫星" },
+    { value: "street", label: "街道" },
+    { value: "terrain", label: "地形" },
+    { value: "dark", label: "暗色" },
+    { value: "nature", label: "自然" },
+    { value: "blackmarble", label: "夜光" },
+    { value: "none", label: "无" },
+  ],
+};
+
 // 地图卡片头部控制条：视图切换（2D/3D/both）、参考系、显示时长、底图、投影、
 // 经纬网 / 晨昏线 / 可视范围开关、可见段模式。纯展示组件，状态由父级管理。
 export default function MapToolbar({
@@ -28,12 +50,15 @@ export default function MapToolbar({
   eci3d, onEci,
   visibleHours, onVisibleHours, hours,
   mapStyle, onMapStyle,
+  basemapEngine = "ol", // 底图选项按引擎：ol（OpenLayers 样式）| cesium（Cesium/运行态势样式）
   proj, onProj,
+  showProj = true, // 是否显示投影切换（Cesium 2D 引擎仅支持 3857，隐藏）
   showGrid, onShowGrid,
   showTerminator, onShowTerminator,
   showVisibility, onShowVisibility,
   passMode, onPassMode,
 }) {
+  const basemapOptions = BASEMAP_OPTIONS[basemapEngine] || BASEMAP_OPTIONS.ol;
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", mb: 1.25 }}>
       <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
@@ -81,35 +106,36 @@ export default function MapToolbar({
             <MenuItem value={ALL_HOURS}>全部（{hours || 48} 小时）</MenuItem>
           </Select>
         </FormControl>
+        {/* 底图：2D/3D 均可切换（按引擎显示 OL 或 Cesium 列表，Cesium 列表与运行态势页一致） */}
+        <FormControl size="small">
+          <InputLabel>底图</InputLabel>
+          <Select
+            value={mapStyle}
+            label="底图"
+            sx={{ minWidth: 96 }}
+            onChange={(e) => onMapStyle(e.target.value)}
+          >
+            {basemapOptions.map((b) => (
+              <MenuItem key={b.value} value={b.value}>{b.label}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
         {(viewMode === "2d" || viewMode === "both") && (
           <>
-            <FormControl size="small">
-              <InputLabel>底图</InputLabel>
-              <Select
-                value={mapStyle}
-                label="底图"
-                sx={{ minWidth: 96 }}
-                onChange={(e) => onMapStyle(e.target.value)}
-              >
-                <MenuItem value="dark">暗色</MenuItem>
-                <MenuItem value="light">浅灰</MenuItem>
-                <MenuItem value="satellite">卫星</MenuItem>
-                <MenuItem value="terrain">地形</MenuItem>
-                <MenuItem value="standard">标准</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl size="small">
-              <InputLabel>投影</InputLabel>
-              <Select
-                value={proj}
-                label="投影"
-                sx={{ minWidth: 190 }}
-                onChange={(e) => onProj(e.target.value)}
-              >
-                <MenuItem value="EPSG:3857">EPSG:3857 (Web Mercator)</MenuItem>
-                <MenuItem value="EPSG:4326">EPSG:4326 (经纬度)</MenuItem>
-              </Select>
-            </FormControl>
+            {showProj && (
+              <FormControl size="small">
+                <InputLabel>投影</InputLabel>
+                <Select
+                  value={proj}
+                  label="投影"
+                  sx={{ minWidth: 190 }}
+                  onChange={(e) => onProj(e.target.value)}
+                >
+                  <MenuItem value="EPSG:3857">EPSG:3857 (Web Mercator)</MenuItem>
+                  <MenuItem value="EPSG:4326">EPSG:4326 (经纬度)</MenuItem>
+                </Select>
+              </FormControl>
+            )}
             <FormControlLabel
               control={<Switch size="small" checked={showGrid} onChange={(e) => onShowGrid(e.target.checked)} />}
               label="经纬网"

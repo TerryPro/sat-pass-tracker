@@ -92,6 +92,22 @@ export default function ParamsCard({ form, satellites, onField, onBoolField, onS
             ))}
         </TextField>
       </Box>
+      <TextField
+        select
+        label="2D 地图引擎"
+        size="small"
+        fullWidth
+        value={form.map2d_engine || "ol"}
+        onChange={onField("map2d_engine")}
+        sx={{ my: 0.75 }}
+        title="2D 星下点地图的渲染引擎：OpenLayers（稳定默认）或 Cesium 2D（新引擎，对照测试中）"
+      >
+        <MenuItem value="ol">OpenLayers（默认）</MenuItem>
+        <MenuItem value="cesium">Cesium 2D（测试中）</MenuItem>
+      </TextField>
+      <Typography variant="caption" sx={{ display: "block", color: "text.secondary", mb: 0.5 }}>
+        Cesium 2D 引擎仅支持 Web Mercator 投影（投影切换在该引擎下不可用）
+      </Typography>
 
       {/* 轨道数据：TLE 获取策略 */}
       <GroupTitle icon={<CloudSyncIcon fontSize="small" />} title="轨道数据" />

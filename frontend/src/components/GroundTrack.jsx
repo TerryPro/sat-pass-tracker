@@ -7,6 +7,7 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
+import { useSelector } from "react-redux";
 import Map2D from "./Map2D.jsx";
 import MapToolbar from "./MapToolbar.jsx";
 import InfoBar from "./InfoBar.jsx";
@@ -21,6 +22,20 @@ import { drawGanttToCanvas } from "./gantt.js";
 // 3D 视图懒加载：Cesium 体积大（~1MB），仅在切换到 3D / 2D+3D 时下载解析，
 // 避免默认 2D 首屏也被迫加载 Cesium，明显加快首张地图出图。
 const Globe3D = lazy(() => import("./globe3d/Globe3D.jsx"));
+// Cesium 2D 引擎同样懒加载（仅当设置页选择 Cesium 引擎时才下载 Cesium）
+const CesiumMap2D = lazy(() => import("./cesium2d/CesiumMap2D.jsx"));
+
+// 各引擎的合法底图 key（与 MapToolbar.BASEMAP_OPTIONS 对应）
+const OL_BASEMAPS = ["dark", "light", "satellite", "terrain", "standard"];
+const CESIUM_BASEMAPS = ["satellite", "street", "terrain", "dark", "nature", "blackmarble", "none"];
+// OL 底图 key → Cesium key（引擎切换或传给 Globe3D/CesiumMap2D 时使用）
+const OL_TO_CESIUM_BASEMAP = {
+  dark: "dark",
+  light: "light",
+  satellite: "satellite",
+  terrain: "terrain",
+  standard: "street",
+};
 
 export default function GroundTrack({ params, passes, activeIdx, onSelect, activePass, currentPos, sidebarVisible }) {
   const { lat, lon, alt, hours, satellite } = params;
@@ -47,6 +62,18 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
   // 应用主题（设置页 theme 字段）：甘特图画布配色按主题取色
   const theme = useAppTheme();
   const ganttRef = useRef(null); // 时间-仰角甘特图 canvas
+  // 2D 地图引擎（设置页「计算」组配置）：ol（OpenLayers，默认）| cesium（Cesium 2D 对照测试）
+  const map2dEngine = useSelector((s) => s.settings.values?.map2d_engine || "ol");
+  const cesium2d = map2dEngine === "cesium";
+  // 2D/3D 实际使用的 Cesium 底图 key：Cesium 引擎下 mapStyle 即 key；OL 引擎下映射
+  const cesiumBasemap = cesium2d ? mapStyle : (OL_TO_CESIUM_BASEMAP[mapStyle] || "satellite");
+
+  // 引擎切换：底图 key 不在目标引擎合法列表时，规整为两引擎共有的 satellite，
+  // 避免下拉空选 / 引擎拿到非法 key（例如 OL 的 light ↔ Cesium 的 street/nature）
+  useEffect(() => {
+    const legal = cesium2d ? CESIUM_BASEMAPS : OL_BASEMAPS;
+    if (!legal.includes(mapStyle)) setMapStyle("satellite");
+  }, [cesium2d]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 显示时长的实际生效值：-1（全部）时跟随计算窗口 hours，
   // 保证轨迹渲染/甘特图/推演始终覆盖完整计算时长（切到 72h/168h 后自动全窗口）。
@@ -94,8 +121,10 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
         hours={hours}
         mapStyle={mapStyle}
         onMapStyle={setMapStyle}
+        basemapEngine={cesium2d ? "cesium" : "ol"}
         proj={proj}
         onProj={setProj}
+        showProj={!cesium2d}
         showGrid={showGrid}
         onShowGrid={setShowGrid}
         showTerminator={showTerminator}
@@ -124,26 +153,59 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
             ...(viewMode === "3d" ? { display: "none" } : {}),
           }}
         >
-          <Map2D
-            params={params}
-            gt={gt}
-            passes={passes}
-            activeIdx={activeIdx}
-            onSelect={onSelect}
-            activePass={activePass}
-            currentPos={currentPos}
-            idx={idx}
-            liveMode={liveMode}
-            proj={proj}
-            showGrid={showGrid}
-            showVisibility={showVisibility}
-            passMode={passMode}
-            mapStyle={mapStyle}
-            visibleHours={effVisibleHours}
-            showTerminator={showTerminator}
-            active={viewMode !== "3d"}
-            sidebarVisible={sidebarVisible}
-          />
+          {cesium2d ? (
+            // Cesium 2D 引擎（懒加载，仅下载 Cesium chunk 时显示 fallback）
+            <Suspense
+              fallback={
+                <Box sx={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "text.secondary", fontSize: 13 }}>
+                  加载 2D 视图（Cesium）…
+                </Box>
+              }
+            >
+              <CesiumMap2D
+                params={params}
+                gt={gt}
+                passes={passes}
+                activeIdx={activeIdx}
+                onSelect={onSelect}
+                activePass={activePass}
+                currentPos={currentPos}
+                idx={idx}
+                liveMode={liveMode}
+                proj={proj}
+                showGrid={showGrid}
+                showVisibility={showVisibility}
+                passMode={passMode}
+                mapStyle={mapStyle}
+                visibleHours={effVisibleHours}
+                showTerminator={showTerminator}
+                active={viewMode !== "3d"}
+                sidebarVisible={sidebarVisible}
+                onSetIdx={(i) => { setIdx(i); setLiveMode(false); }}
+              />
+            </Suspense>
+          ) : (
+            <Map2D
+              params={params}
+              gt={gt}
+              passes={passes}
+              activeIdx={activeIdx}
+              onSelect={onSelect}
+              activePass={activePass}
+              currentPos={currentPos}
+              idx={idx}
+              liveMode={liveMode}
+              proj={proj}
+              showGrid={showGrid}
+              showVisibility={showVisibility}
+              passMode={passMode}
+              mapStyle={mapStyle}
+              visibleHours={effVisibleHours}
+              showTerminator={showTerminator}
+              active={viewMode !== "3d"}
+              sidebarVisible={sidebarVisible}
+            />
+          )}
         </Box>
         <Box
           sx={{
@@ -188,6 +250,7 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
                 liveMode={liveMode}
                 eci={eci3d}
                 onEciChange={setEci3d}
+                basemap={cesiumBasemap} // 与 2D 共用同一底图，切 2D/3D 保持一致
                 cameraDistM={viewMode === "both" ? 12000000 : 20000000}
               />
             </Suspense>

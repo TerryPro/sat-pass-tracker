@@ -42,6 +42,7 @@ export default function SettingsPage() {
     time_display: timeDisplaySetting, // utc | local：界面时间显示时区
     orbit_color: savedSettings?.orbit_color || "rgba(255,180,70,0.55)", // 运行态势轨道线颜色
     tle_mode: savedSettings?.tle_mode || "online", // online（联网优先）| builtin（内置/本地，不联网）
+    map2d_engine: savedSettings?.map2d_engine || "ol", // ol（OpenLayers）| cesium（Cesium 2D）
   }));
   // 字段级"用户是否主动编辑过"标记：
   // - terminator_show_dashed：用户手动点过 Switch 后置 true；保存成功后清 false，允许后续从 Redux 回填。
@@ -100,7 +101,7 @@ export default function SettingsPage() {
     satellite: src.satellite, hours: src.hours, sample_interval: src.sample_interval,
     theme: src.theme, terminator_show_dashed: src.terminator_show_dashed,
     time_display: src.time_display, orbit_color: src.orbit_color,
-    tle_mode: src.tle_mode,
+    tle_mode: src.tle_mode, map2d_engine: src.map2d_engine,
   });
   const sameForm = (a, b) =>
     a.lat === b.lat && a.lon === b.lon && a.alt === b.alt &&
@@ -108,7 +109,7 @@ export default function SettingsPage() {
     a.sample_interval === b.sample_interval &&
     a.theme === b.theme && a.terminator_show_dashed === b.terminator_show_dashed &&
     a.time_display === b.time_display && a.orbit_color === b.orbit_color &&
-    a.tle_mode === b.tle_mode;
+    a.tle_mode === b.tle_mode && a.map2d_engine === b.map2d_engine;
 
   const persistedRef = useRef(null); // 最近一次已持久化/已加载的表单字段快照
   const initedRef = useRef(false);   // 是否已用后端值初始化过表单（只一次）
@@ -138,7 +139,7 @@ export default function SettingsPage() {
     return () => clearTimeout(id);
   }, [
     form.lat, form.lon, form.alt, form.satellite, form.hours,
-    form.sample_interval, form.theme, form.terminator_show_dashed, form.time_display, form.orbit_color, form.tle_mode, dispatch,
+    form.sample_interval, form.theme, form.terminator_show_dashed, form.time_display, form.orbit_color, form.tle_mode, form.map2d_engine, dispatch,
   ]);
 
   const setField = (key) => (e) => {

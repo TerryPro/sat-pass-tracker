@@ -86,7 +86,8 @@ export function createInertialCameraUpdate(eciRef) {
   };
 }
 
-// 切换底图（satvis 风格多底图）：'satellite' 卫星影像 / 'street' 街道 / 'terrain' 地形晕渲 / 'dark' 暗色 / 'nature' 自然(NASA Blue Marble) / 'blackmarble' 夜光(NASA Black Marble) / 'none' 无
+// 切换底图（satvis 风格多底图）：'satellite' 卫星影像 / 'street' 街道 / 'terrain' 地形晕渲 /
+// 'dark' 暗色 / 'light' 浅灰 / 'nature' 自然(NASA Blue Marble) / 'blackmarble' 夜光(NASA Black Marble) / 'none' 无
 // 加载为异步，带失败兜底（内置 Natural Earth 贴图）。
 export function setBasemap(viewer, kind) {
   if (!viewer) return;
@@ -94,7 +95,8 @@ export function setBasemap(viewer, kind) {
   layers.removeAll();
   let p = null;
   if (kind === "street") {
-    p = Cesium.OpenStreetMapImageryProvider.fromUrl("https://tile.openstreetmap.org/");
+    // Cesium 1.144：OpenStreetMapImageryProvider 仅支持构造函数（无 fromUrl 静态方法）
+    p = new Cesium.OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" });
   } else if (kind === "terrain") {
     p = Cesium.ArcGisMapServerImageryProvider.fromUrl(
       "https://services.arcgisonline.com/ArcGIS/rest/services/World_Hillshade/MapServer"
@@ -107,6 +109,13 @@ export function setBasemap(viewer, kind) {
     // CARTO 暗色底图（无需 key，天然适合与高亮卫星区分）
     p = new Cesium.UrlTemplateImageryProvider({
       url: "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+      credit: "© OpenStreetMap © CARTO",
+      maximumLevel: 19,
+    });
+  } else if (kind === "light") {
+    // CARTO 浅灰底图（与 OL 引擎的 light 浅灰样式同源）
+    p = new Cesium.UrlTemplateImageryProvider({
+      url: "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
       credit: "© OpenStreetMap © CARTO",
       maximumLevel: 19,
     });

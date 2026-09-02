@@ -133,6 +133,8 @@ DEFAULT_SETTINGS = {
     "orbit_color": "rgba(255,180,70,0.55)",
     # 轨道数据获取模式：online（联网优先，默认）| builtin（仅内置/本地缓存，不主动联网）
     "tle_mode": "online",
+    # 2D 地图引擎：ol（OpenLayers，默认）| cesium（Cesium SCENE2D，对照测试中）
+    "map2d_engine": "ol",
 }
 
 
