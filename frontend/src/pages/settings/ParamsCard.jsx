@@ -1,4 +1,4 @@
-// 参数设置卡片：卫星 / 显示时长 / 采样间隔 / 主题 / 晨昏线开关。
+// 参数设置卡片：按「计算 / 轨道数据 / 界面外观」三组组织。
 // 纯展示受控组件：值由父级 form 控制，字段变更回调父级（触发自动保存）。
 import React from "react";
 import Box from "@mui/material/Box";
@@ -10,6 +10,9 @@ import MenuItem from "@mui/material/MenuItem";
 import Button from "@mui/material/Button";
 import Switch from "@mui/material/Switch";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import CalculateIcon from "@mui/icons-material/Calculate";
+import CloudSyncIcon from "@mui/icons-material/CloudSync";
+import PaletteIcon from "@mui/icons-material/Palette";
 import { THEMES, HOUR_OPTIONS, SAMPLE_OPTIONS } from "../../constants.js";
 import { CardTitle } from "./parts.jsx";
 import { hourLabel, sampleLabel, inputSx } from "./helpers.js";
@@ -24,14 +27,25 @@ const ORBIT_COLORS = [
   { key: "rgba(210,140,255,0.6)", label: "紫色" },
 ];
 
+// 分组标题：彩色小图标 + 标题 + 分隔线
+function GroupTitle({ icon, title, color }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 2.5, mb: 1 }}>
+      <Box sx={{ display: "flex", color }}>{icon}</Box>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+        {title}
+      </Typography>
+    </Box>
+  );
+}
+
 export default function ParamsCard({ form, satellites, onField, onBoolField, onSave }) {
   return (
     <Paper sx={{ p: 2.5, height: "100%", display: "flex", flexDirection: "column" }}>
-      <CardTitle title="参数设置" hint="默认跟踪的卫星、计算参数与界面外观（变更后自动保存）" />
+      <CardTitle title="参数设置" hint="跟踪计算、轨道数据与界面外观（变更后自动保存）" />
 
-      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-        卫星与计算
-      </Typography>
+      {/* 计算：过境预测的核心参数 */}
+      <GroupTitle icon={<CalculateIcon fontSize="small" />} title="计算" color="#4f8df9" />
       <Divider sx={{ mb: 1 }} />
       <TextField
         select
@@ -78,6 +92,10 @@ export default function ParamsCard({ form, satellites, onField, onBoolField, onS
             ))}
         </TextField>
       </Box>
+
+      {/* 轨道数据：TLE 获取策略 */}
+      <GroupTitle icon={<CloudSyncIcon fontSize="small" />} title="轨道数据" />
+      <Divider sx={{ mb: 1 }} />
       <TextField
         select
         label="轨道数据来源"
@@ -95,9 +113,8 @@ export default function ParamsCard({ form, satellites, onField, onBoolField, onS
         内置/本地模式：使用本地缓存或内置历史轨道数据，计算更快、可离线；数据可能过时
       </Typography>
 
-      <Typography variant="subtitle1" sx={{ mt: 2.5, fontWeight: 600 }}>
-        外观
-      </Typography>
+      {/* 界面外观：主题 / 时间 / 轨道线颜色 / 地图显示 */}
+      <GroupTitle icon={<PaletteIcon fontSize="small" />} title="界面外观" color="#ab47bc" />
       <Divider sx={{ mb: 1 }} />
       <TextField
         select
