@@ -27,7 +27,7 @@ const CesiumMap2D = lazy(() => import("./cesium2d/CesiumMap2D.jsx"));
 
 // 各引擎的合法底图 key（与 MapToolbar.BASEMAP_OPTIONS 对应）
 const OL_BASEMAPS = ["dark", "light", "satellite", "terrain", "standard"];
-const CESIUM_BASEMAPS = ["satellite", "street", "terrain", "dark", "nature", "blackmarble", "none"];
+const CESIUM_BASEMAPS = ["satellite", "street", "nature"];
 // OL 底图 key → Cesium key（引擎切换或传给 Globe3D/CesiumMap2D 时使用）
 const OL_TO_CESIUM_BASEMAP = {
   dark: "dark",
@@ -65,8 +65,15 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
   // 2D 地图引擎（设置页「计算」组配置）：ol（OpenLayers，默认）| cesium（Cesium 2D 对照测试）
   const map2dEngine = useSelector((s) => s.settings.values?.map2d_engine || "ol");
   const cesium2d = map2dEngine === "cesium";
-  // 2D/3D 实际使用的 Cesium 底图 key：Cesium 引擎下 mapStyle 即 key；OL 引擎下映射
-  const cesiumBasemap = cesium2d ? mapStyle : (OL_TO_CESIUM_BASEMAP[mapStyle] || "satellite");
+  // 地图离线模式（设置页「计算」组）：开启后强制使用内置离线底图，不可选择其它
+  const mapOffline = useSelector(
+    (s) => (s.settings.values?.map_offline ?? false) === true
+  );
+  // 2D/3D 实际使用的 Cesium 底图 key：离线模式固定内置（offline）；否则 Cesium 引擎下 mapStyle 即 key，
+  // OL 引擎下映射到 Cesium 底图。
+  const cesiumBasemap = mapOffline
+    ? "offline"
+    : (cesium2d ? mapStyle : (OL_TO_CESIUM_BASEMAP[mapStyle] || "satellite"));
 
   // 引擎切换：底图 key 不在目标引擎合法列表时，规整为两引擎共有的 satellite，
   // 避免下拉空选 / 引擎拿到非法 key（例如 OL 的 light ↔ Cesium 的 street/nature）
@@ -119,9 +126,10 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
         visibleHours={visibleHours}
         onVisibleHours={setVisibleHours}
         hours={hours}
-        mapStyle={mapStyle}
+        mapStyle={mapOffline ? "offline" : mapStyle}
         onMapStyle={setMapStyle}
         basemapEngine={cesium2d ? "cesium" : "ol"}
+        basemapDisabled={mapOffline}
         proj={proj}
         onProj={setProj}
         showProj={!cesium2d}
@@ -166,8 +174,6 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
                 params={params}
                 gt={gt}
                 passes={passes}
-                activeIdx={activeIdx}
-                onSelect={onSelect}
                 activePass={activePass}
                 currentPos={currentPos}
                 idx={idx}
@@ -176,7 +182,7 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
                 showGrid={showGrid}
                 showVisibility={showVisibility}
                 passMode={passMode}
-                mapStyle={mapStyle}
+                mapStyle={cesiumBasemap}
                 visibleHours={effVisibleHours}
                 showTerminator={showTerminator}
                 active={viewMode !== "3d"}
@@ -251,6 +257,7 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
                 eci={eci3d}
                 onEciChange={setEci3d}
                 basemap={cesiumBasemap} // 与 2D 共用同一底图，切 2D/3D 保持一致
+                showLighting={showTerminator} // 光照开关：3D 昼夜阴影随开关启停
                 cameraDistM={viewMode === "both" ? 12000000 : 20000000}
               />
             </Suspense>

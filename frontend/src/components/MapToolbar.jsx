@@ -31,15 +31,11 @@ const BASEMAP_OPTIONS = {
     { value: "terrain", label: "地形" },
     { value: "standard", label: "标准" },
   ],
-  // Cesium 引擎：与运行态势页（SceneControls）完全一致的底图列表
+  // Cesium 引擎：底图选项（保留卫星/街道/自然，去掉地形/暗色/夜光/无）
   cesium: [
     { value: "satellite", label: "卫星" },
     { value: "street", label: "街道" },
-    { value: "terrain", label: "地形" },
-    { value: "dark", label: "暗色" },
     { value: "nature", label: "自然" },
-    { value: "blackmarble", label: "夜光" },
-    { value: "none", label: "无" },
   ],
 };
 
@@ -51,14 +47,17 @@ export default function MapToolbar({
   visibleHours, onVisibleHours, hours,
   mapStyle, onMapStyle,
   basemapEngine = "ol", // 底图选项按引擎：ol（OpenLayers 样式）| cesium（Cesium/运行态势样式）
+  basemapDisabled = false, // 地图离线模式：底图锁定为内置离线底图，不可选择其它
   proj, onProj,
-  showProj = true, // 是否显示投影切换（Cesium 2D 引擎仅支持 3857，隐藏）
+  showProj = true, // 是否显示投影切换（Cesium 2D 引擎不支持投影切换，隐藏）
   showGrid, onShowGrid,
   showTerminator, onShowTerminator,
   showVisibility, onShowVisibility,
   passMode, onPassMode,
 }) {
-  const basemapOptions = BASEMAP_OPTIONS[basemapEngine] || BASEMAP_OPTIONS.ol;
+  const basemapOptions = basemapDisabled
+    ? [{ value: "offline", label: "内置（离线）" }]
+    : (BASEMAP_OPTIONS[basemapEngine] || BASEMAP_OPTIONS.ol);
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", mb: 1.25 }}>
       <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
@@ -106,13 +105,15 @@ export default function MapToolbar({
             <MenuItem value={ALL_HOURS}>全部（{hours || 48} 小时）</MenuItem>
           </Select>
         </FormControl>
-        {/* 底图：2D/3D 均可切换（按引擎显示 OL 或 Cesium 列表，Cesium 列表与运行态势页一致） */}
+        {/* 底图：2D/3D 均可切换（按引擎显示 OL 或 Cesium 列表，Cesium 列表与运行态势页一致）；
+            离线模式下锁定为内置离线底图（value=offline），禁用下拉不可选择其它 */}
         <FormControl size="small">
           <InputLabel>底图</InputLabel>
           <Select
             value={mapStyle}
             label="底图"
             sx={{ minWidth: 96 }}
+            disabled={basemapDisabled}
             onChange={(e) => onMapStyle(e.target.value)}
           >
             {basemapOptions.map((b) => (
@@ -144,8 +145,8 @@ export default function MapToolbar({
             />
             <FormControlLabel
               control={<Switch size="small" checked={showTerminator} onChange={(e) => onShowTerminator(e.target.checked)} />}
-              label="晨昏线"
-              title="显示地球晨昏线（日/夜分界），随实时或推演时间移动"
+              label="光照"
+              title="光照：显示地球昼夜明暗（太阳光照），2D 叠加晨昏线分界，随实时或推演时间移动"
               sx={{ "& .MuiFormControlLabel-label": { fontSize: 13 } }}
             />
           </>

@@ -106,7 +106,21 @@ export default function ParamsCard({ form, satellites, onField, onBoolField, onS
         <MenuItem value="cesium">Cesium 2D（测试中）</MenuItem>
       </TextField>
       <Typography variant="caption" sx={{ display: "block", color: "text.secondary", mb: 0.5 }}>
-        Cesium 2D 引擎仅支持 Web Mercator 投影（投影切换在该引擎下不可用）
+        Cesium 2D 引擎固定使用 EPSG:4326 投影（投影切换在该引擎下不可用）
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={!!form.map_offline}
+            onChange={onBoolField("map_offline")}
+          />
+        }
+        label="地图离线模式：强制使用内置离线底图"
+        sx={{ my: 0.5 }}
+      />
+      <Typography variant="caption" sx={{ display: "block", color: "text.secondary", mb: 0.5 }}>
+        离线模式：地图底图固定为随应用内置的本地影像，完全不联网，且不可切换其它底图；关闭后恢复在线底图选择
       </Typography>
 
       {/* 轨道数据：TLE 获取策略 */}
@@ -183,6 +197,21 @@ export default function ParamsCard({ form, satellites, onField, onBoolField, onS
         label="晨昏线：显示橘色虚线分界（关闭后仅显示夜影阴影）"
         sx={{ my: 0.5 }}
       />
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={!!form.map_click_link}
+            onChange={onBoolField("map_click_link")}
+          />
+        }
+        label="单击地图联动：点击地图跳到最近轨迹点"
+        sx={{ my: 0.5 }}
+        title="开启后，在 Cesium 2D/3D 地图上单击即可把时间轴跳到点击位置最近的卫星轨迹点"
+      />
+      <Typography variant="caption" sx={{ display: "block", color: "text.secondary", mb: 0.5 }}>
+        默认关闭；单击联动当前适用于 Cesium 引擎的 2D/3D 视图
+      </Typography>
 
       <Button variant="contained" fullWidth onClick={onSave} sx={{ mt: "auto" }}>
         保存设置

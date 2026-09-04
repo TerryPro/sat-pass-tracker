@@ -36,26 +36,6 @@ export function createViewer(container, { showClockControls = false } = {}) {
   return viewer;
 }
 
-// 手动添加底图：优先 ArcGIS 卫星影像，失败回退内置 Natural Earth
-export async function loadImagery(viewer) {
-  try {
-    const provider = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
-      "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer"
-    );
-    viewer.imageryLayers.addImageryProvider(provider);
-  } catch (e) {
-    console.warn("ArcGIS 卫星底图加载失败，使用内置 Natural Earth 兜底", e);
-    try {
-      const fallback = await Cesium.TileMapServiceImageryProvider.fromUrl(
-        Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII")
-      );
-      viewer.imageryLayers.addImageryProvider(fallback);
-    } catch (e2) {
-      console.error("底图兜底也失败", e2);
-    }
-  }
-}
-
 // 重置镜头：北极朝上、地面站经线正对屏幕（相机位于赤道、地面站经度处，正视地心）
 export function resetCamera(viewer, lon, cameraDistM) {
   if (!viewer) return;
@@ -86,7 +66,8 @@ export function createInertialCameraUpdate(eciRef) {
   };
 }
 
-// 切换底图（satvis 风格多底图）：'satellite' 卫星影像 / 'street' 街道 / 'terrain' 地形晕渲 /
+// 切换底图（satvis 风格多底图）：'offline' 本地内置 Natural Earth II（离线模式，不联网）/
+// 'satellite' 卫星影像 / 'street' 街道 / 'terrain' 地形晕渲 /
 // 'dark' 暗色 / 'light' 浅灰 / 'nature' 自然(NASA Blue Marble) / 'blackmarble' 夜光(NASA Black Marble) / 'none' 无
 // 加载为异步，带失败兜底（内置 Natural Earth 贴图）。
 export function setBasemap(viewer, kind) {
@@ -94,7 +75,12 @@ export function setBasemap(viewer, kind) {
   const layers = viewer.imageryLayers;
   layers.removeAll();
   let p = null;
-  if (kind === "street") {
+  if (kind === "offline") {
+    // 地图离线模式：只使用随 Cesium 打包的本地底图（Natural Earth II），完全不联网。
+    p = Cesium.TileMapServiceImageryProvider.fromUrl(
+      Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII")
+    );
+  } else if (kind === "street") {
     // Cesium 1.144：OpenStreetMapImageryProvider 仅支持构造函数（无 fromUrl 静态方法）
     p = new Cesium.OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" });
   } else if (kind === "terrain") {

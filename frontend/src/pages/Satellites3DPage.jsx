@@ -29,13 +29,19 @@ export default function Satellites3DPage() {
   const [orbitHiddenNorads, setOrbitHiddenNorads] = useState([]); // 不显示轨道线的卫星 NORAD 列表
   // 场景与底图设置（同卫星轨迹页 MapToolbar 风格，置于顶部控制栏）
   const [viewMode, setViewMode] = useState("3d");        // 3d|2d|columbus
-  const [basemap, setBasemap] = useState("satellite");   // satellite|street|terrain|dark|nature|blackmarble|none
+  const [basemap, setBasemap] = useState("satellite");   // satellite|street|nature
   const [skyOn, setSkyOn] = useState(true);
   const [hdr, setHdr] = useState(true);            // HDR 渲染（satvis 的 HDR）
   const [atmosphere, setAtmosphere] = useState(true); // 大气散射（satvis 的 Atmosphere）
   const [lighting, setLighting] = useState(true);     // 太阳光照与阴影（enableLighting）
   const [showNames, setShowNames] = useState(false);  // 3D 卫星点上是否显示名字标签
   const [frame, setFrame] = useState("fixed");           // 坐标系：fixed（地固）| inertial（惯性）
+  // 地图离线模式（设置页「计算」组）：开启后强制使用内置离线底图，不可选择其它
+  const mapOffline = useSelector(
+    (s) => (s.settings.values?.map_offline ?? false) === true
+  );
+  // 实际传给 3D 的 Cesium 底图 key：离线模式固定内置（offline），否则用用户所选在线底图
+  const effectiveBasemap = mapOffline ? "offline" : basemap;
   // 界面时间显示时区（设置页配置）：utc | local
   const timeDisplay = useSelector((s) => s.settings.values?.time_display || "utc");
   // 轨道线颜色（设置页配置）
@@ -79,8 +85,9 @@ export default function Satellites3DPage() {
         onViewModeChange={setViewMode}
         frame={frame}
         onFrameChange={setFrame}
-        basemap={basemap}
+        basemap={mapOffline ? "offline" : basemap}
         onBasemapChange={setBasemap}
+        basemapDisabled={mapOffline}
         skyOn={skyOn}
         onSkyOnChange={setSkyOn}
         hdr={hdr}
@@ -114,7 +121,7 @@ export default function Satellites3DPage() {
             setListOpen(false); // 打开详情时关闭卫星列表，避免面板叠放
           }}
           viewMode={viewMode}
-          basemap={basemap}
+          basemap={effectiveBasemap}
           skyOn={skyOn}
           hdr={hdr}
           atmosphere={atmosphere}

@@ -1,13 +1,8 @@
-// Cesium 2D 地图（对照引擎，OpenLayers 2D 的 Cesium SCENE2D 替代实现）。
-// props 与 Map2D 完全一致；固定 Web Mercator（EPSG:3857），不提供投影切换。
-// 渲染复用 globe3d/render.js 的实体管线（renderTrack/renderPasses/renderStation/renderRealPoint），
-// 因此与 3D 视图（Globe3D）天然同构，可与 Map2D 并行对照测试。
-//
-// 迁移进度（阶段式，见方案）：
-//   [x] P0：底图 / 地表轨迹 / 可见段高亮+AOS·LOS / 地面站+通视圆 / 卫星位置点
-//   [x] P1：晨昏线（夜影+虚线）
-//   [ ] P1：经纬网
-//   [ ] P2：点击查询联动、时间轴双向同步细节
+// Cesium 2D 地图（对照引擎）：OpenLayers 2D 的 Cesium SCENE2D 替代实现，props 与 Map2D 一致。
+// 投影固定 EPSG:4326，不提供投影切换（GroundTrack 对 Cesium 引擎隐藏投影下拉）。
+// 轨道线/可见段用 scene.primitives 的 PolylineCollection 自绘以控制覆盖顺序；
+// 地面站/通视圆/位置点复用 globe3d/render.js，与 Globe3D 同构，可与 Map2D 并行对照测试。
+// 未实现：经纬网（showGrid 仅接收，尚未渲染）。
 import React, { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import { useSelector } from "react-redux";
@@ -47,18 +42,18 @@ export default function CesiumMap2D({
   currentPos,
   idx,
   liveMode,
-  proj, // 忽略：Cesium 2D 固定 Web Mercator
-  showGrid, // P1：经纬网
+  proj, // 忽略：投影固定 EPSG:4326
+  showGrid, // 经纬网（未实现）
   showVisibility,
   passMode,
   mapStyle,
   visibleHours,
-  showTerminator, // P1：晨昏线
+  showTerminator, // 晨昏线：原生光照阴影 + 橙色虚线分界
   active,
   sidebarVisible,
   onSetIdx = null, // 点击地图联动时间轴：onSetIdx(采样点索引)（与 Globe3D 一致）
 }) {
-  const { lat, lon, alt, satellite } = params;
+  const { lat, lon, satellite } = params;
 
   const containerRef = useRef(null);
   const viewerRef = useRef(null);
@@ -92,6 +87,11 @@ export default function CesiumMap2D({
     (s) => (s.settings?.values?.terminator_show_dashed ?? true) === true
   );
 
+  // 单击地图联动开关（设置页"界面外观"）：默认关闭
+  const clickEnabled = useSelector(
+    (s) => (s.settings?.values?.map_click_link ?? false) === true
+  );
+
   // Cesium 懒加载（仅一次）
   useEffect(() => {
     let cancelled = false;
@@ -108,22 +108,21 @@ export default function CesiumMap2D({
     viewerRef.current = viewer;
     createdRef.current = true;
 
-    // 2D 平面视图：隐藏 Cesium 自带的动画/时间线控件（时间轴由 GroundTrack 的 TimelineBar 统一驱动）
+    // 隐藏 Cesium 自带控件（动画/时间线由外层 TimelineBar 驱动）；2D 下关闭星空/大气与 HDR
     viewer.animation && (viewer.animation.container.style.display = "none");
     viewer.timeline && (viewer.timeline.container.style.display = "none");
     viewer.fullscreenButton && (viewer.fullscreenButton.container.style.display = "none");
-    // 2D 无光照/大气意义：关闭 enableLighting 避免影像被太阳照出一侧明暗；同时关星空与大气
-    viewer.scene.globe.enableLighting = false;
     viewer.scene.skyBox.show = false;
     if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = false;
-    viewer.scene.highDynamicRange = false; // 2D 影像保持原色，避免 HDR 造成明暗偏差
-    // 超采样渲染：缓解 Cesium SCENE2D 下 polyline/ellipse 的锯齿（2D 无 MSAA，靠提高分辨率换取平滑）
+    viewer.scene.highDynamicRange = false;
+    // 光照（enableLighting）不在此设置：由下方 showTerminator effect 控制昼夜阴影随时钟着色
+    // 超采样渲染：缓解 SCENE2D 下 polyline/ellipse 锯齿（2D 无 MSAA，靠提高分辨率换取平滑）
     viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 2);
-    setBasemap(viewer, mapStyle || "satellite"); // mapStyle 即 Cesium key（与运行态势页共用）
-    // 立即切到 2D（duration=0 无动画），并缩放到全球范围
+    setBasemap(viewer, mapStyle || "satellite");
+    // 立即切到 2D（无动画）并缩放到全球范围（4326 全纬度 ±90°）
     viewer.scene.morphTo2D(0);
     viewer.camera.setView({
-      destination: Cesium.Rectangle.fromDegrees(-180, -85, 180, 85),
+      destination: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
     });
 
     const ro = new ResizeObserver(() => viewer.resize());
@@ -135,8 +134,32 @@ export default function CesiumMap2D({
     viewer.scene.primitives.add(trackColl);
     trackCollRef.current = trackColl;
 
-    // 点击地图 → 找到最近的轨迹采样点并联动时间轴（与 Globe3D 一致；
-    // gt/onSetIdx 经 ref 读取，避免创建时的闭包过期）
+    return () => {
+      if (resizeObserverRef.current) { resizeObserverRef.current.disconnect(); resizeObserverRef.current = null; }
+      viewer.destroy();
+      viewerRef.current = null;
+      createdRef.current = false;
+      trackCollRef.current = null;
+      markEntitiesRef.current = [];
+      stationEntityRef.current = null;
+      footprintEntityRef.current = null;
+      realPointRef.current = null;
+      satFootRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, cesiumState]);
+
+  // 单击地图 → 时间轴跳到最近的轨迹采样点。
+  // 由设置页"单击地图联动"开关控制（默认关闭），开关打开且 Viewer 就绪时才注册，
+  // 避免误触与不必要的屏幕拾取开销；gt/onSetIdx 经 ref 读取，避免闭包过期。
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || cesiumState !== "ready" || !active) return;
+    if (!clickEnabled) {
+      if (clickHandlerRef.current) { clickHandlerRef.current.destroy(); clickHandlerRef.current = null; }
+      return;
+    }
+    if (clickHandlerRef.current) return; // 已注册（开关/视图状态未变时保持）
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((movement) => {
       const data = gtRef.current;
@@ -156,22 +179,10 @@ export default function CesiumMap2D({
       cb(bestIdx);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
     clickHandlerRef.current = handler;
-
     return () => {
       if (clickHandlerRef.current) { clickHandlerRef.current.destroy(); clickHandlerRef.current = null; }
-      if (resizeObserverRef.current) { resizeObserverRef.current.disconnect(); resizeObserverRef.current = null; }
-      viewer.destroy();
-      viewerRef.current = null;
-      createdRef.current = false;
-      trackCollRef.current = null;
-      markEntitiesRef.current = [];
-      stationEntityRef.current = null;
-      footprintEntityRef.current = null;
-      realPointRef.current = null;
-      satFootRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, cesiumState]);
+  }, [active, cesiumState, clickEnabled]);
 
   // 底图样式切换（mapStyle 即 Cesium key）
   useEffect(() => {
@@ -180,7 +191,15 @@ export default function CesiumMap2D({
     setBasemap(viewer, mapStyle || "satellite");
   }, [mapStyle, cesiumState]);
 
-  // 从隐藏切回显示时刷新尺寸
+  // 晨昏线光照（夜/昼阴影）：开关打开时 enableLighting=true，原生光照随时间推移产生移动阴影，关闭则无阴影
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || cesiumState !== "ready") return;
+    viewer.scene.globe.enableLighting = !!showTerminator;
+    viewer.scene.requestRender();
+  }, [showTerminator, cesiumState]);
+
+  // 切回显示/侧栏变化后，按延迟序列刷新尺寸（等容器完成重排，避免首帧变形）
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || !active) return;
@@ -189,7 +208,7 @@ export default function CesiumMap2D({
   }, [active, sidebarVisible]);
 
   // 场景时钟推进到"显示时刻"：实时=当前时刻；播放=时间轴当前点
-  // （2D 下光照无意义，但时钟驱动后续晨昏线/位置标注等按时刻计算）
+  // （驱动原生光照阴影与晨昏线虚线随时钟着色/移动）
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer) return;
@@ -205,12 +224,9 @@ export default function CesiumMap2D({
     viewer.scene.requestRender();
   }, [liveMode, idx, gt]);
 
-  // 轨道线 + 可见段黄弧统一绘制（核心）：放入同一个 scene.primitives 的 PolylineCollection，
-  // 集合内部严格按添加顺序渲染（先轨道淡线 → 后黄弧亮线）→ 黄弧恒定画在轨道线上方，
-  // 不再受 Cesium translucent 跨集合排序影响。
-  // 由两个 effect 驱动，避免 all 模式播放时 activePass 变化触发全量重绘：
-  //   - all 模式：deps 不含 activePass → 播放中稳定
-  //   - selected 模式：activePass 变化（跨过境）才重绘
+  // 轨道线 + 可见段黄弧统一绘制（核心）：共用 scene.primitives 的 PolylineCollection，
+  // 集合内按添加顺序渲染（先轨道淡线、后黄弧亮线）→ 黄弧恒定在上，不受 translucent 跨集合排序影响。
+  // 分 all/selected 两个 effect 驱动：all 模式 deps 不含 activePass（播放中稳定），selected 模式跨过境才重绘。
   const llh1 = (p) => Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 1);
   // PolylineCollection（primitive 层）的 material 必须是 Cesium.Material（不能直接传 Color）
   const colorMat = (c) => Cesium.Material.fromType(Cesium.Material.ColorType, { color: c });
@@ -338,7 +354,7 @@ export default function CesiumMap2D({
     });
   }, [lat, lon, active, cesiumState]);
 
-  // 地面站通视圆（随卫星高度源/开关变化重建；2D Web Mercator 纬度窗口 ±85°）
+  // 地面站通视圆（随卫星高度源/开关变化重建）
   useEffect(() => {
     renderStationFootprint({
       viewer: viewerRef.current,
@@ -350,7 +366,7 @@ export default function CesiumMap2D({
       activePass,
       currentPos,
       footprintRef: footprintEntityRef,
-      maxLatDeg: 85,
+      maxLatDeg: 90, // 4326 全球纬度 ±90°
     });
   }, [showVisibility, satellite, activePass, currentPos, gt, active, cesiumState]);
 
@@ -428,15 +444,13 @@ export default function CesiumMap2D({
     }
   }, [liveMode, currentPos, idx, gt, active, cesiumState]);
 
-  // 晨昏线光照（夜半球阴影 + 橙黄虚线，等同 OL 2D 的晨昏线开关）
+  // 晨昏线虚线分界（阴影由上方 enableLighting 光照渲染，此处仅叠加橙色虚线）
   useCesiumTerminator({
     viewerRef,
     cesiumState,
     showTerminator,
     terminatorShowDashed,
     liveMode,
-    idx,
-    gt,
   });
 
   if (cesiumState !== "ready" && cesiumState !== "loading") {

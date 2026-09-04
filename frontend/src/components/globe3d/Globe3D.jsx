@@ -7,6 +7,7 @@
 // 坐标换算见 coords.js，Viewer/相机见 viewer.js，实体渲染见 render.js。
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
+import { useSelector } from "react-redux";
 import { Cesium, loadCesium } from "./cesiumGlobal.js";
 import { createViewer, setBasemap, resetCamera, createInertialCameraUpdate } from "./viewer.js";
 import { renderTrack, renderPasses, renderStationMarker, renderStationFootprint, renderRealPoint } from "./render.js";
@@ -16,6 +17,7 @@ export default function Globe3D({
   onSetIdx, visibleHours, showVisibility, active, passMode, liveMode,
   eci = false, onEciChange, cameraDistM = 20000000,
   basemap = "satellite", // 底图（Cesium key，与 2D/运行态势页共用，切换 2D/3D 保持一致）
+  showLighting = true,  // 光照（昼夜明暗）：受工具栏"光照"开关控制，关闭则无昼夜阴影
 }) {
   const { lat, lon, alt, satellite } = params;
 
@@ -29,6 +31,16 @@ export default function Globe3D({
 
   const eciRef = useRef(false);            // 供回调读取的最新 eci 状态（由父级传入）
   eciRef.current = eci;
+
+  // 单击地图联动开关（设置页"界面外观"）：默认关闭
+  const clickEnabled = useSelector(
+    (s) => (s.settings?.values?.map_click_link ?? false) === true
+  );
+  // gt / onSetIdx 经 ref 读取：点击 handler 空依赖创建，避免闭包过期
+  const gtRef = useRef(gt);
+  gtRef.current = gt;
+  const onSetIdxRef = useRef(onSetIdx);
+  onSetIdxRef.current = onSetIdx;
 
   // 各类实体的引用（轨迹/选中段/地面站/位置点）
   const trackEntitiesRef = useRef([]);     // 地表轨迹 + 空间轨道线
@@ -87,6 +99,14 @@ export default function Globe3D({
     viewer.scene.requestRender();
   }, [liveMode, currentPos, idx, gt, eci]);
 
+  // 光照开关变化 → 即时启停昼夜阴影（与工具栏"光照"开关联动）
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    viewer.scene.globe.enableLighting = showLighting;
+    viewer.scene.requestRender();
+  }, [showLighting, cesiumState]);
+
   // 进入 3D（或切换 2D/3D 模式）时重置视角，使相机距离随模式自适应
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -100,6 +120,8 @@ export default function Globe3D({
     const viewer = createViewer(containerRef.current);
     viewerRef.current = viewer;
     createdRef.current = true;
+    // 光照（昼夜明暗）初始值：默认开启，受工具栏"光照"开关控制
+    viewer.scene.globe.enableLighting = showLighting;
 
     // 超采样渲染：缓解 polyline 锯齿（提高分辨率换取线条平滑）
     viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 2);
@@ -115,27 +137,7 @@ export default function Globe3D({
     // 初始视角：正顶视地面站，高度足够让整颗地球都可见
     resetCamera(viewer, lon, cameraDistM);
 
-    // 点击地球 → 找到最近的轨迹采样点并联动时间轴
-    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-    handler.setInputAction((movement) => {
-      if (!gt) return;
-      const cartesian = viewer.camera.pickEllipsoid(movement.position, viewer.scene.globe.ellipsoid);
-      if (!cartesian) return;
-      const carto = Cesium.Cartographic.fromCartesian(cartesian);
-      const lonDeg = Cesium.Math.toDegrees(carto.longitude);
-      const latDeg = Cesium.Math.toDegrees(carto.latitude);
-      let bestIdx = 0;
-      let bestD = Infinity;
-      gt.points.forEach((p, i) => {
-        const d = (p.lon - lonDeg) ** 2 + (p.lat - latDeg) ** 2;
-        if (d < bestD) { bestD = d; bestIdx = i; }
-      });
-      if (onSetIdx) onSetIdx(bestIdx);
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-    clickHandlerRef.current = handler;
-
     return () => {
-      if (clickHandlerRef.current) { clickHandlerRef.current.destroy(); clickHandlerRef.current = null; }
       if (resizeObserverRef.current) { resizeObserverRef.current.disconnect(); resizeObserverRef.current = null; }
       // viewer.destroy() 会统一销毁所有实体，无需单独 remove，避免访问已销毁的 entities
       viewer.destroy();
@@ -150,6 +152,41 @@ export default function Globe3D({
     // gt 初始可能为空；仅依赖 active/cesiumState 触发创建
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, cesiumState]);
+
+  // 单击地图 → 时间轴跳到最近的轨迹采样点。
+  // 由设置页"单击地图联动"开关控制（默认关闭），开关打开且 Viewer 就绪时才注册，
+  // 避免误触与不必要的屏幕拾取开销；gt/onSetIdx 经 ref 读取，避免闭包过期。
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || cesiumState !== "ready" || !active) return;
+    if (!clickEnabled) {
+      if (clickHandlerRef.current) { clickHandlerRef.current.destroy(); clickHandlerRef.current = null; }
+      return;
+    }
+    if (clickHandlerRef.current) return; // 已注册（开关/视图状态未变时保持）
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction((movement) => {
+      const data = gtRef.current;
+      const cb = onSetIdxRef.current;
+      if (!data || !data.points || !data.points.length || !cb) return;
+      const cartesian = viewer.camera.pickEllipsoid(movement.position, viewer.scene.globe.ellipsoid);
+      if (!cartesian) return;
+      const carto = Cesium.Cartographic.fromCartesian(cartesian);
+      const lonDeg = Cesium.Math.toDegrees(carto.longitude);
+      const latDeg = Cesium.Math.toDegrees(carto.latitude);
+      let bestIdx = 0;
+      let bestD = Infinity;
+      data.points.forEach((p, i) => {
+        const d = (p.lon - lonDeg) ** 2 + (p.lat - latDeg) ** 2;
+        if (d < bestD) { bestD = d; bestIdx = i; }
+      });
+      cb(bestIdx);
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    clickHandlerRef.current = handler;
+    return () => {
+      if (clickHandlerRef.current) { clickHandlerRef.current.destroy(); clickHandlerRef.current = null; }
+    };
+  }, [active, cesiumState, clickEnabled]);
 
   // 从隐藏切回显示时刷新尺寸（both 模式下 3D 容器尺寸变化也需要重新计算）
   useEffect(() => {

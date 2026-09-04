@@ -135,6 +135,10 @@ DEFAULT_SETTINGS = {
     "tle_mode": "online",
     # 2D 地图引擎：ol（OpenLayers，默认）| cesium（Cesium SCENE2D，对照测试中）
     "map2d_engine": "ol",
+    # 单击地图联动时间轴：true=点击 2D/3D 地图跳到最近轨迹点；false=关闭（默认）
+    "map_click_link": False,
+    # 地图离线模式：true=强制使用内置离线底图（Cesium 引擎，完全不联网），且不可切换其它；false=在线底图（默认）
+    "map_offline": False,
 }
 
 

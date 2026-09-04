@@ -1,11 +1,26 @@
-// Cesium 2D 晨昏线光照效果 hook：夜半球阴影 + 橙黄虚线分界。
-// 复用 components/terminator.js 的天文数学（纯函数），用 Cesium 实体在 SCENE2D 平面绘制：
-//   - 夜影：晨昏线曲线 + 顶部/底部封口构成的闭合多边形（覆盖全经度）
-//   - 虚线：晨昏线本体的橙色虚线（PolylineDashMaterialProperty）
-// 实时模式每 30s 刷新（随真实时间缓慢移动）；推演模式随时间轴当前点变化。
-import { useEffect, useRef, useState } from "react";
+// Cesium 2D 晨昏线虚线分界 hook：仅绘制橙黄虚线（设置页 terminator_show_dashed 可关闭）。
+// 夜/昼阴影不在此手绘：由 CesiumMap2D 的 globe.enableLighting 原生光照随时钟着色渲染。
+// 虚线实体只创建一次，polyline.positions 用 CallbackProperty 惰性求值：
+// 实时=真实时间（节流 30s），推演=场景时钟 currentTime（由 CesiumMap2D 随时间轴写入）。
+// 时刻未跨阈值时返回同一引用（Cesium 不重建几何），变化时才重算并返回新数组触发平滑重建（不闪烁）。
+import { useEffect, useRef } from "react";
 import { Cesium } from "../globe3d/cesiumGlobal.js";
 import { sunPosition, terminatorLat } from "../terminator.js";
+
+// 计算给定时刻的晨昏线虚线位置序列（Cartesian3 数组，纬度裁剪到 maxLat ±90°）
+function buildDashedPositions(ms) {
+  const { decl, sunLon } = sunPosition(new Date(ms));
+  const d = Math.abs(decl) < 1e-6 ? (decl >= 0 ? 1e-6 : -1e-6) : decl;
+  const maxLat = 90;
+  const clamp = (v) => Math.max(-maxLat, Math.min(maxLat, v));
+  const samples = 360;
+  const positions = [];
+  for (let i = 0; i <= samples; i++) {
+    const lon = -180 + (i / samples) * 360;
+    positions.push(Cesium.Cartesian3.fromDegrees(lon, clamp(terminatorLat(d, sunLon, lon)), 2));
+  }
+  return positions;
+}
 
 export function useCesiumTerminator({
   viewerRef,
@@ -13,77 +28,72 @@ export function useCesiumTerminator({
   showTerminator,
   terminatorShowDashed,
   liveMode,
-  idx,
-  gt,
 }) {
-  const nightRef = useRef(null);   // 夜半球阴影 polygon 实体
-  const dashedRef = useRef(null);  // 晨昏线橙黄虚线实体
-
-  // 实时时钟：每 30s 推进一次，驱动实时模式下晨昏线随真实时间缓慢移动
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 30000);
-    return () => clearInterval(id);
-  }, []);
+  const dashedRef = useRef(null);    // 虚线实体（仅创建一次，后续只更新几何）
+  const positionsRef = useRef([]);   // 最近一次计算的虚线 positions（供 CallbackProperty 返回）
+  const lastMsRef = useRef(null);    // 最近一次已绘制时刻（ms），用于节流
+  const liveRef = useRef(liveMode);  // 供帧内回调读取最新模式
+  liveRef.current = liveMode;
 
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || cesiumState !== "ready") return;
-
-    // 清理旧实体（数据/开关变化时重建）
-    if (nightRef.current) { viewer.entities.remove(nightRef.current); nightRef.current = null; }
-    if (dashedRef.current) { viewer.entities.remove(dashedRef.current); dashedRef.current = null; }
-    if (!showTerminator) return;
-
-    // 显示时刻：实时模式取真实当前时刻；推演模式取时间轴当前点
-    const ms = liveMode
-      ? nowMs
-      : gt && gt.points && gt.points[idx]
-        ? new Date(gt.points[idx].t).getTime()
-        : nowMs;
-    if (!isFinite(ms)) return;
-
-    const { decl, sunLon } = sunPosition(new Date(ms));
-    // 南半球夏季（δ<0）南极进入白昼、北极进入黑夜；夜半球位于晨昏线以北，反之以南
-    const d = Math.abs(decl) < 1e-6 ? (decl >= 0 ? 1e-6 : -1e-6) : decl;
-    const nightNorth = d < 0;
-    // 2D Web Mercator 纬度窗口上限（Cesium 投影同样裁剪到约 ±85°）
-    const maxLat = 85;
-    const clamp = (v) => Math.max(-maxLat, Math.min(maxLat, v));
-
-    const samples = 360;
-    const curve = [];
-    for (let i = 0; i <= samples; i++) {
-      const lon = -180 + (i / samples) * 360;
-      curve.push([lon, clamp(terminatorLat(d, sunLon, lon))]);
+    // 未开启晨昏线或关闭虚线分界 → 移除虚线（只保留原生光照阴影或纯底图）
+    if (!showTerminator || !terminatorShowDashed) {
+      if (dashedRef.current) {
+        viewer.entities.remove(dashedRef.current);
+        dashedRef.current = null;
+      }
+      return;
     }
+    // 已创建则无需重建（positions 由 CallbackProperty 惰性更新）
+    if (dashedRef.current) return;
 
-    // 夜半球阴影：晨昏线 + 顶部/底部边封口成闭合多边形（全经度，Cesium 按世界副本渲染）
-    const ring = curve.map((p) => Cesium.Cartesian3.fromDegrees(p[0], p[1], 1));
-    ring.push(Cesium.Cartesian3.fromDegrees(180, nightNorth ? maxLat : -maxLat, 1));
-    ring.push(Cesium.Cartesian3.fromDegrees(-180, nightNorth ? maxLat : -maxLat, 1));
-    nightRef.current = viewer.entities.add({
-      polygon: {
-        hierarchy: new Cesium.PolygonHierarchy(ring),
-        height: 1, // 极小高度：走普通 Primitive，避免 GroundPrimitive 在全经度面/2D 下异常
-        material: Cesium.Color.fromCssColorString("rgba(0,0,30,0.32)"),
+    // positions 惰性求值：Cesium 每帧在渲染循环内调用本回调
+    const posCB = new Cesium.CallbackProperty(() => {
+      let ms;
+      if (liveRef.current) {
+        ms = Date.now(); // 实时：真实时间
+      } else if (viewer.clock && viewer.clock.currentTime) {
+        ms = Cesium.JulianDate.toDate(viewer.clock.currentTime).getTime(); // 推演：场景时钟（与光照同源）
+      } else {
+        return positionsRef.current;
+      }
+      if (!isFinite(ms)) return positionsRef.current;
+      // 节流：实时太阳移动慢（30s 一次）；推演按时刻精确变化（idx 拖动/播放即变）
+      const minStep = liveRef.current ? 30000 : 0;
+      if (lastMsRef.current !== null && Math.abs(ms - lastMsRef.current) < minStep) {
+        return positionsRef.current; // 返回同一引用 → Cesium 不重建几何，静止零开销
+      }
+      lastMsRef.current = ms;
+      positionsRef.current = buildDashedPositions(ms); // 新数组 → 触发一次平滑重建
+      return positionsRef.current;
+    }, false);
+
+    dashedRef.current = viewer.entities.add({
+      polyline: {
+        positions: posCB,
+        width: 1.6,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: Cesium.Color.fromCssColorString("rgba(255,190,80,0.9)"),
+          dashLength: 16,
+          dashPattern: 0x0FF0, // 明暗间隔虚线
+        }),
       },
     });
 
-    // 晨昏线本体：橙黄虚线（可通过设置页关闭，仅保留夜影）
-    if (terminatorShowDashed) {
-      dashedRef.current = viewer.entities.add({
-        polyline: {
-          positions: curve.map((p) => Cesium.Cartesian3.fromDegrees(p[0], p[1], 2)),
-          width: 1.6,
-          material: new Cesium.PolylineDashMaterialProperty({
-            color: Cesium.Color.fromCssColorString("rgba(255,190,80,0.9)"),
-            dashLength: 16,
-            dashPattern: 0x0FF0, // 明暗间隔虚线
-          }),
-        },
-      });
-    }
-  }, [viewerRef, cesiumState, showTerminator, terminatorShowDashed,
-      liveMode, idx, gt, nowMs]);
+    return () => {
+      if (dashedRef.current) {
+        // Viewer 可能已被外层销毁（cleanup 顺序），安全移除
+        try {
+          viewer.entities.remove(dashedRef.current);
+        } catch (_) {
+          /* Viewer 已销毁，忽略 */
+        }
+        dashedRef.current = null;
+      }
+      lastMsRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewerRef, cesiumState, showTerminator, terminatorShowDashed]);
 }

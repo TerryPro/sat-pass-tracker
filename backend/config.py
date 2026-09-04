@@ -81,18 +81,17 @@ DATA_DIR = Path(get("GS_DATA_DIR", str(Path(__file__).resolve().parent / "data")
 
 # ---------------------------------------------------------------
 # CORS 允许来源（FastAPI 中间件与 Socket.IO 共用）
-# 逗号分隔的显式来源列表；默认只放行本地前端开发/预览端口（5173）。
-# 部署到公网时通过 GS_CORS_ORIGINS 显式列出前端实际来源，
-# 避免"通配符来源 + 携带凭据"这一不合规范的组合（浏览器会拒绝）。
+# 逗号分隔的显式来源列表；* 表示任意来源。
+# 本地开发走 Vite 同源代理，且常需用局域网地址（手机/平板）预览，
+# 因此默认放行任意来源；部署到公网时通过 GS_CORS_ORIGINS
+# 显式列出前端实际来源，避免"通配符来源 + 携带凭据"的不合规组合。
 # ---------------------------------------------------------------
 def _parse_origins(raw: str) -> list:
     origins = [o.strip() for o in raw.split(",") if o.strip()]
-    return origins or ["http://localhost:5173", "http://127.0.0.1:5173"]
+    return origins or ["*"]
 
 
-CORS_ORIGINS = _parse_origins(
-    get("GS_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-)
+CORS_ORIGINS = _parse_origins(get("GS_CORS_ORIGINS", "*"))
 # 通配符来源 + 凭据不合规范：显式来源时允许凭据，通配符时自动关闭凭据
 CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
 

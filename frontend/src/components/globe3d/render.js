@@ -216,7 +216,7 @@ export function renderStationMarker({ viewer, lat, lon, stationRef }) {
 // 独立于地面站标记，避免实时位置更新时把静态标记一起重建导致闪烁。
 // 几何用 footprint.js 的 computeFootprint（与 OL 2D 同一数学）：生成的是地球表面上的
 // 球冠边界（经纬度序列），而非切平面空间圆——后者是悬浮多边形，2D 投影下形状不正确。
-// maxLatDeg：Web Mercator 2D 约 ±85°，3D 球面可用 ±90°。
+// maxLatDeg：通视圆边界的纬度窗口上限（±90° 为全球）；2D 引擎按自身投影纬度限制由调用方传入。
 export function renderStationFootprint({
   viewer,
   gt,

@@ -22,12 +22,22 @@ export default function SceneControls({
   group, downloadedGroups = [], onGroupChange, hasRecords, onOpenList,
   // 场景设置
   viewMode, onViewModeChange, frame, onFrameChange,
-  basemap, onBasemapChange, skyOn, onSkyOnChange, hdr, onHdrChange,
+  basemap, onBasemapChange, basemapDisabled = false, // 地图离线模式：底图锁定为内置离线底图，不可选择其它
+  skyOn, onSkyOnChange, hdr, onHdrChange,
   atmosphere, onAtmosphereChange, lighting, onLightingChange,
   showOrbits, onShowOrbitsChange, showNames, onShowNamesChange,
   // 选中星操作
   selectedNorad, onClearSelection, onOpenDetail,
 }) {
+  // 底图选项：离线模式锁定内置（与 MapToolbar 相同，用扁平数组渲染 MenuItem，
+  // 避免三元+Fragment 嵌套导致 MUI Select 无法遍历选项）
+  const basemapOptions = basemapDisabled
+    ? [{ value: "offline", label: "内置（离线）" }]
+    : [
+        { value: "satellite", label: "卫星" },
+        { value: "street", label: "街道" },
+        { value: "nature", label: "自然" },
+      ];
   return (
     <Paper sx={{ p: 1.5, display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", flexShrink: 0 }}>
       <Select
@@ -77,21 +87,18 @@ export default function SceneControls({
           <ToggleButton value="fixed">地固</ToggleButton>
           <ToggleButton value="inertial">惯性</ToggleButton>
         </ToggleButtonGroup>
-        <FormControl size="small" title="3D 地球底图">
+        <FormControl size="small" title="3D 地球底图（离线模式下锁定为内置离线底图）">
           <InputLabel>底图</InputLabel>
           <Select
             value={basemap}
             label="底图"
             sx={{ minWidth: 96 }}
+            disabled={basemapDisabled}
             onChange={(e) => onBasemapChange(e.target.value)}
           >
-            <MenuItem value="satellite">卫星</MenuItem>
-            <MenuItem value="street">街道</MenuItem>
-            <MenuItem value="terrain">地形</MenuItem>
-            <MenuItem value="dark">暗色</MenuItem>
-            <MenuItem value="nature">自然</MenuItem>
-            <MenuItem value="blackmarble">夜光</MenuItem>
-            <MenuItem value="none">无</MenuItem>
+            {basemapOptions.map((b) => (
+              <MenuItem key={b.value} value={b.value}>{b.label}</MenuItem>
+            ))}
           </Select>
         </FormControl>
         <FormControlLabel
