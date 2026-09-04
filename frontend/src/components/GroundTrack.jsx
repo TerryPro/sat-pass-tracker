@@ -258,6 +258,7 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
                 onEciChange={setEci3d}
                 basemap={cesiumBasemap} // 与 2D 共用同一底图，切 2D/3D 保持一致
                 showLighting={showTerminator} // 光照开关：3D 昼夜阴影随开关启停
+                showGrid={showGrid} // 经纬网：2D/3D 共用同一开关
                 cameraDistM={viewMode === "both" ? 12000000 : 20000000}
               />
             </Suspense>

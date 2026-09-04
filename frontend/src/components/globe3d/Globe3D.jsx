@@ -11,6 +11,7 @@ import { useSelector } from "react-redux";
 import { Cesium, loadCesium } from "./cesiumGlobal.js";
 import { createViewer, setBasemap, resetCamera, createInertialCameraUpdate } from "./viewer.js";
 import { renderTrack, renderPasses, renderStationMarker, renderStationFootprint, renderRealPoint } from "./render.js";
+import { useGraticule } from "./useGraticule.js";
 
 export default function Globe3D({
   params, gt, passes, activePass, currentPos, idx,
@@ -18,6 +19,7 @@ export default function Globe3D({
   eci = false, onEciChange, cameraDistM = 20000000,
   basemap = "satellite", // 底图（Cesium key，与 2D/运行态势页共用，切换 2D/3D 保持一致）
   showLighting = true,  // 光照（昼夜明暗）：受工具栏"光照"开关控制，关闭则无昼夜阴影
+  showGrid = false,     // 经纬网（Graticule）：显示经纬线与 DMS 标签
 }) {
   const { lat, lon, alt, satellite } = params;
 
@@ -266,6 +268,9 @@ export default function Globe3D({
       pointRef: realPointRef,
     });
   }, [liveMode, currentPos, idx, gt, active, eci, cesiumState]);
+
+  // 经纬网（Graticule）：随 showGrid 开关显示/隐藏
+  useGraticule({ viewerRef, state: cesiumState, active, showGrid });
 
   // 注：不再在数据加载后自动 flyTo——此前误用卫星高度作相机高度导致视角过近，
   // 且会覆盖整球初始视角；需要近景时手动缩放即可。

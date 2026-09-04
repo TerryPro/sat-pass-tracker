@@ -6,7 +6,7 @@ import { Cesium } from "./cesiumGlobal.js";
 export const EARTH_RADIUS_KM = 6371;
 
 // 卫星默认轨道高度（km）：无实时/过境数据时估算地面站通视半径用
-export const SAT_DEFAULT_ALT = { fo29: 570, iss: 420, css: 400 };
+export const SAT_DEFAULT_ALT = { iss: 420, css: 400 };
 
 // 经纬度 + 高度(km) → Cesium 地心坐标（高度单位转米）
 export function llh(lon, lat, altKm) {

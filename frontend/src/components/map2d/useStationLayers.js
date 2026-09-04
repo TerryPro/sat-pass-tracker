@@ -79,7 +79,7 @@ export function useStationLayers({
     }
 
     // 3) 按卫星类型默认值（由 TLE 平均运动估算）
-    const SAT_HEIGHT_KM = { fo29: 570, iss: 420, css: 400 };
+    const SAT_HEIGHT_KM = { iss: 420, css: 400 };
     return SAT_HEIGHT_KM[satellite] || 400;
   }
 

@@ -4,7 +4,7 @@ import reducer, { DEFAULT_PARAMS, setSocketStatus, updateParams } from "./trackS
 
 describe("trackSlice", () => {
   it("默认参数包含卫星与基础字段", () => {
-    expect(DEFAULT_PARAMS.satellite).toBe("fo29");
+    expect(DEFAULT_PARAMS.satellite).toBe("iss");
     expect(DEFAULT_PARAMS.hours).toBe(48);
     expect(DEFAULT_PARAMS.sample_interval).toBe(60);
   });
@@ -13,7 +13,7 @@ describe("trackSlice", () => {
     const s0 = reducer(undefined, { type: "@@init" });
     const s1 = reducer(s0, updateParams({ hours: 72 }));
     expect(s1.params.hours).toBe(72);
-    expect(s1.params.satellite).toBe("fo29");
+    expect(s1.params.satellite).toBe("iss");
     expect(s1.params.lat).toBeCloseTo(39.9042);
   });
 

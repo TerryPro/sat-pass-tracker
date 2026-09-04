@@ -2,7 +2,7 @@
 // 投影固定 EPSG:4326，不提供投影切换（GroundTrack 对 Cesium 引擎隐藏投影下拉）。
 // 轨道线/可见段用 scene.primitives 的 PolylineCollection 自绘以控制覆盖顺序；
 // 地面站/通视圆/位置点复用 globe3d/render.js，与 Globe3D 同构，可与 Map2D 并行对照测试。
-// 未实现：经纬网（showGrid 仅接收，尚未渲染）。
+// 经纬网由 useGraticule（Graticules.js）实现，随 showGrid 开关显示/隐藏。
 import React, { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import { useSelector } from "react-redux";
@@ -10,6 +10,7 @@ import { Cesium, loadCesium } from "../globe3d/cesiumGlobal.js";
 import { createViewer, setBasemap } from "../globe3d/viewer.js";
 import { renderStationMarker, renderStationFootprint, renderRealPoint } from "../globe3d/render.js";
 import { useCesiumTerminator } from "./useCesiumTerminator.js";
+import { useGraticule } from "../globe3d/useGraticule.js";
 import { useAppTheme } from "../../hooks/useAppTheme.js";
 
 // 球面小圆环边界点（方位角均匀采样，供覆盖圆边界 polyline 使用）：
@@ -452,6 +453,9 @@ export default function CesiumMap2D({
     terminatorShowDashed,
     liveMode,
   });
+
+  // 经纬网（Graticule）：随 showGrid 开关显示/隐藏
+  useGraticule({ viewerRef, state: cesiumState, active, showGrid });
 
   if (cesiumState !== "ready" && cesiumState !== "loading") {
     return <Box sx={{ p: 2, color: "#f87171", fontSize: 13 }}>{cesiumState}</Box>;

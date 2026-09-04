@@ -9,7 +9,9 @@ export const DEFAULT_PARAMS = {
   alt: API_DEFAULT_PARAMS.alt,
   hours: API_DEFAULT_PARAMS.hours,
   sample_interval: API_DEFAULT_PARAMS.sample_interval,
-  satellite: "fo29",
+  // 默认卫星必须落在 BUILTIN_SATELLITES 或后端 satellites 库内，否则 MUI Select 值越界告警。
+  // 此前硬编码 "fo29" 已从库中移除，改写为内置常驻的 iss，避免首次加载越界。
+  satellite: "iss",
 };
 
 // 异步加载过境数据（REST）

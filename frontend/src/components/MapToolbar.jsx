@@ -138,12 +138,6 @@ export default function MapToolbar({
               </FormControl>
             )}
             <FormControlLabel
-              control={<Switch size="small" checked={showGrid} onChange={(e) => onShowGrid(e.target.checked)} />}
-              label="经纬网"
-              title="在地图上叠加显示经纬网与经纬度标签"
-              sx={{ "& .MuiFormControlLabel-label": { fontSize: 13 } }}
-            />
-            <FormControlLabel
               control={<Switch size="small" checked={showTerminator} onChange={(e) => onShowTerminator(e.target.checked)} />}
               label="光照"
               title="光照：显示地球昼夜明暗（太阳光照），2D 叠加晨昏线分界，随实时或推演时间移动"
@@ -151,6 +145,12 @@ export default function MapToolbar({
             />
           </>
         )}
+        <FormControlLabel
+          control={<Switch size="small" checked={showGrid} onChange={(e) => onShowGrid(e.target.checked)} />}
+          label="经纬网"
+          title="在地图上叠加显示经纬网与经纬度标签（2D/3D 通用）"
+          sx={{ "& .MuiFormControlLabel-label": { fontSize: 13 } }}
+        />
         <FormControlLabel
           control={<Switch size="small" checked={showVisibility} onChange={(e) => onShowVisibility(e.target.checked)} />}
           label="可视范围"
