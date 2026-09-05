@@ -60,7 +60,10 @@ export function useSatelliteLayers({
     if (!liveMode) onHover(pos);
   }, [liveMode, currentPos, idx, gt, proj, theme, posSourceRef, onHover]);
 
-  // 卫星覆盖圆（统一单标记）：实时模式用 currentPos，播放模式用时间轴点；统一橙色
+  // 卫星覆盖圆边界（统一单标记）：实时模式用 currentPos，播放模式用时间轴点；统一橙色
+  // 只绘制边界、不填充半透明面：球冠填充跨 ±180° 时会在经线处出现条带/竖线且难以根治
+  // （Cesium/OL 两引擎一致），因此用与地面站通视圆相同的 footprint.js 几何仅描轮廓。
+  // 含极"全经度套环"不画套环本身（横跨整幅地图），只画远离极一侧的真实边界弧。
   useEffect(() => {
     const footSrc = footprintSourceRef.current;
     if (!footSrc) return;
@@ -82,30 +85,28 @@ export function useSatelliteLayers({
       const sig = items.map((it) => (it.collar ? 1 : 0)).join(",");
       const fs = realFootRef.current;
       if (!fs || fs.sig !== sig) {
-        // 首次或结构变化：重建全部 feature
+        // 首次或结构变化：重建全部 feature（每组仅一个描边 feature）
         footSrc.clear();
         const groups = items.map(({ ring, collar, boundaryArc }) => {
           const toMap = toMapRef.current;
           const group = [];
-          const f = new Feature(new Polygon([ring.map(([lo, la]) => toMap(lo, la))]));
-          f.setStyle(
-            new Style({
-              fill: new Fill({ color: "rgba(245,158,11,0.15)" }),
-              // 含极"全经度套环"不描边（单独画边界弧），避免 ±180° 出现竖线
-              stroke: collar
-                ? undefined
-                : new Stroke({ color: "rgba(245,158,11,0.8)", width: 1.5 }),
-            })
-          );
-          group.push(f);
-          footSrc.addFeature(f);
-          if (collar && boundaryArc) {
-            const line = new Feature(new LineString(boundaryArc.map(([lo, la]) => toMap(lo, la))));
-            line.setStyle(
-              new Style({ stroke: new Stroke({ color: "rgba(245,158,11,0.8)", width: 1.5 }) })
-            );
-            group.push(line);
-            footSrc.addFeature(line);
+          const stroke = new Style({
+            stroke: new Stroke({ color: "rgba(245,158,11,0.8)", width: 1.5 }),
+          });
+          if (collar) {
+            // 含极套环：只画真实边界弧（远离极一侧的小圆）
+            if (boundaryArc && boundaryArc.length >= 2) {
+              const line = new Feature(new LineString(boundaryArc.map(([lo, la]) => toMap(lo, la))));
+              line.setStyle(stroke);
+              group.push(line);
+              footSrc.addFeature(line);
+            }
+          } else {
+            // 普通闭合环：环线描边（不填充，避免跨 ±180° 条带）
+            const f = new Feature(new Polygon([ring.map(([lo, la]) => toMap(lo, la))]));
+            f.setStyle(stroke);
+            group.push(f);
+            footSrc.addFeature(f);
           }
           return group;
         });
@@ -115,9 +116,13 @@ export function useSatelliteLayers({
         items.forEach(({ ring, collar, boundaryArc }, i) => {
           const toMap = toMapRef.current;
           const group = fs.groups[i];
-          group[0].setGeometry(new Polygon([ring.map(([lo, la]) => toMap(lo, la))]));
-          if (collar && boundaryArc && group[1]) {
-            group[1].setGeometry(new LineString(boundaryArc.map(([lo, la]) => toMap(lo, la))));
+          if (!group[0]) return;
+          if (collar) {
+            if (boundaryArc && boundaryArc.length >= 2) {
+              group[0].setGeometry(new LineString(boundaryArc.map(([lo, la]) => toMap(lo, la))));
+            }
+          } else {
+            group[0].setGeometry(new Polygon([ring.map(([lo, la]) => toMap(lo, la))]));
           }
         });
       }

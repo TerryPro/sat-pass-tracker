@@ -74,8 +74,10 @@ export default function CesiumMap2D({
   const stationEntityRef = useRef(null);
   const footprintEntityRef = useRef(null);
   const realPointRef = useRef(null);
-  const satFootRef = useRef(null); // 卫星覆盖圆（星下点可视范围）{ entity, radius }
-  const satPosRef = useRef(null); // 最新星下点 { lat, lon, altKm }（供覆盖圆 CallbackProperty 每帧读取）
+  const satFootRef = useRef(null); // 卫星覆盖圆边界（星下点可视范围轮廓）polyline entity
+  const satPosRef = useRef(null); // 最新星下点 { lat, lon }（供覆盖圆边界 CallbackProperty 读取）
+  const satBetaRef = useRef(0);   // 最新地心半角 β（rad）：覆盖圆半径随高度变化，供边界回调读取
+  const ringCacheRef = useRef({ key: "", positions: [] }); // 边界圆环缓存：位置/β 未变时返回同一数组，避免每帧重建
 
   // 最新 gt / onSetIdx 经 ref 读取：点击 handler 空依赖创建，避免闭包过期
   const gtRef = useRef(gt);
@@ -148,6 +150,9 @@ export default function CesiumMap2D({
       footprintEntityRef.current = null;
       realPointRef.current = null;
       satFootRef.current = null;
+      satPosRef.current = null;
+      satBetaRef.current = 0;
+      ringCacheRef.current = { key: "", positions: [] };
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, cesiumState]);
@@ -387,64 +392,41 @@ export default function CesiumMap2D({
     });
   }, [liveMode, currentPos, idx, gt, active, cesiumState]);
 
-  // 卫星覆盖圆（星下点可视范围，常显橙色，与 OL 2D 一致）：
+  // 卫星覆盖圆边界（星下点可视范围轮廓，常显橙色，与 OL 2D 一致）：
   // 覆盖圆 = 卫星处 0° 仰角可通视的地表球冠，地心半角 β = acos(R/(R+h))。
-  // 实现：ellipse 仅做半透明填充（ellipse 几何的 outline 固定 1px 无法加粗），
-  // 边界线用独立 polyline 圆环绘制（width 可调，跨 ±180° 自动 wrap）。
-  // 性能/同步：position/圆环均用 CallbackProperty 读 satPosRef 每帧更新（与轨道线同帧），
-  // 几何（β 半径）仅在高度明显变化时重建，播放中几乎不触发。
+  // 只描边界圆环、不绘制半透明填充面：填充若用 Cesium 平面 EllipseGeometry，在覆盖圆
+  // 跨 ±180°（高轨大覆盖，如 GEO/IGSO）时会产生贯穿整幅地图的条带，难以根治；
+  // 球面面积的正确填充又需要按经线/极区切分（footprint.js）。故改用与轨道线一致的
+  // polyline 圆环表达可视范围边界，简单且无条带。
+  // 性能/同步：圆环只创建一次，positions 用 CallbackProperty 惰性求值并缓存，
+  // 位置/β 未变时返回同一数组，Cesium 不重建几何（播放/实时移动零闪烁）。
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || cesiumState !== "ready") return;
     const p = liveMode ? currentPos : (gt && gt.points[idx]);
     if (!p || typeof p.lat !== "number" || typeof p.lon !== "number") return;
     if (!(p.alt_km > 0)) return;
-    satPosRef.current = { lat: p.lat, lon: p.lon, altKm: p.alt_km };
-
+    satPosRef.current = { lat: p.lat, lon: p.lon };
     const R = 6371e3; // 地球半径（米）
-    const beta = Math.acos(Math.min(1, R / (R + p.alt_km * 1000))); // 地心半角（rad）
-    const radius = beta * R; // 球面弧长半径（米）
-
-    const cur = satFootRef.current;
-    // 高度明显变化（覆盖圆半径显著改变）或尚未创建 → 重建几何；否则几何复用，仅位置/圆环由 CallbackProperty 跟随
-    if (!cur || Math.abs(radius - cur.radius) > 0.02 * R) {
-      if (cur) {
-        viewer.entities.remove(cur.entity);
-        if (cur.line) viewer.entities.remove(cur.line);
+    satBetaRef.current = Math.acos(Math.min(1, R / (R + p.alt_km * 1000))); // 地心半角（rad）
+    if (satFootRef.current) return; // 已创建：仅更新位置/β ref，边界由 CallbackProperty 惰性取用
+    const lineCB = new Cesium.CallbackProperty(() => {
+      const s = satPosRef.current;
+      if (!s) return ringCacheRef.current.positions;
+      const beta = satBetaRef.current;
+      const key = `${s.lat.toFixed(4)}|${s.lon.toFixed(4)}|${beta.toFixed(6)}`;
+      if (key !== ringCacheRef.current.key) {
+        ringCacheRef.current = { key, positions: circleRingPositions(s.lat, s.lon, beta) };
       }
-      const posCB = new Cesium.CallbackProperty(() => {
-        const s = satPosRef.current;
-        return s
-          ? Cesium.Cartesian3.fromDegrees(s.lon, s.lat, 1)
-          : Cesium.Cartesian3.fromDegrees(0, 0, 1);
-      }, false);
-      const lineCB = new Cesium.CallbackProperty(() => {
-        const s = satPosRef.current;
-        return s ? circleRingPositions(s.lat, s.lon, beta) : [];
-      }, false);
-      satFootRef.current = {
-        entity: viewer.entities.add({
-          position: posCB,
-          ellipse: {
-            semiMajorAxis: radius,
-            semiMinorAxis: radius,
-            height: 1,
-            material: Cesium.Color.fromCssColorString("rgba(245,158,11,0.18)"),
-            // granularity 是弧度步长（越小越密）：0.005 rad ≈ 0.29°，约 1256 个采样点，填充圆滑
-            granularity: 0.005,
-          },
-        }),
-        // 边界线：独立 polyline（宽 2px，明显于椭圆自带 1px 几何描边）
-        line: viewer.entities.add({
-          polyline: {
-            positions: lineCB,
-            width: 2,
-            material: Cesium.Color.fromCssColorString("rgba(245,158,11,0.95)"),
-          },
-        }),
-        radius,
-      };
-    }
+      return ringCacheRef.current.positions; // 同一引用 → Cesium 不重建几何，静止零开销
+    }, false);
+    satFootRef.current = viewer.entities.add({
+      polyline: {
+        positions: lineCB,
+        width: 2,
+        material: Cesium.Color.fromCssColorString("rgba(245,158,11,0.95)"),
+      },
+    });
   }, [liveMode, currentPos, idx, gt, active, cesiumState]);
 
   // 晨昏线虚线分界（阴影由上方 enableLighting 光照渲染，此处仅叠加橙色虚线）
