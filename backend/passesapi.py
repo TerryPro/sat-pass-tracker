@@ -32,7 +32,7 @@ def api_passes(
     sample_interval: int = 60,
     horizon: float = 0.0,
     preset: str = "",
-    satellite: str = "fo29",
+    satellite: str = "iss",
 ):
     """计算未来 N 小时指定卫星过境数据（az/el/斜距逐样本采样）。
 
@@ -55,7 +55,7 @@ def api_groundtrack(
     hours: int = 48,
     step_sec: int = 60,
     preset: str = "",
-    satellite: str = "fo29",
+    satellite: str = "iss",
 ):
     """计算未来 N 小时、每 step_sec 秒一个点的星下点轨迹（二维地图显示用）。"""
     return compute_groundtrack_service(

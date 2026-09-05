@@ -50,10 +50,13 @@ def _clamp(value: float, lo: float, hi: float) -> float:
 
 
 def _resolve_station(params: dict) -> dict:
-    """解析地面站坐标与内置预设（preset），返回 {lat, lon, alt, label}。"""
-    lat = float(params.get("lat", DEFAULT_LAT))
-    lon = float(params.get("lon", DEFAULT_LON))
-    alt = float(params.get("alt", DEFAULT_ALT_M))
+    """解析地面站坐标与内置预设（preset），返回 {lat, lon, alt, label}。
+
+    坐标做范围 clamp，防止越界参数传给 skyfield 导致 500 或无效结果。
+    """
+    lat = _clamp(float(params.get("lat", DEFAULT_LAT)), -90.0, 90.0)
+    lon = _clamp(float(params.get("lon", DEFAULT_LON)), -180.0, 180.0)
+    alt = _clamp(float(params.get("alt", DEFAULT_ALT_M)), 0.0, 10000.0)
     preset = str(params.get("preset", "")).lower()
     if preset == "on80dd":
         lat, lon, alt = ON80DD_LAT, ON80DD_LON, ON80DD_ALT_M
@@ -86,7 +89,7 @@ def compute_passes_service(params: dict) -> dict:
     hours = int(_clamp(float(params.get("hours", 48)), 1, MAX_HOURS))
     sample_sec = int(_clamp(float(params.get("sample_interval", 30)),
                             MIN_SAMPLE_SEC, MAX_SAMPLE_SEC))
-    horizon = float(params.get("horizon", 0.0))
+    horizon = _clamp(float(params.get("horizon", 0.0)), -90.0, 90.0)
     sat_key, norad_id = _resolve_satellite(params)
 
     tle_name, tle1, tle2 = _get_tle_cached(norad_id)

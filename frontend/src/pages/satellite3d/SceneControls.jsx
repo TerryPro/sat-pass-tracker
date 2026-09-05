@@ -34,6 +34,7 @@ export default function SceneControls({
   const basemapOptions = basemapDisabled
     ? [{ value: "offline", label: "内置（离线）" }]
     : [
+        { value: "natural_earth", label: "自然地球 II" },
         { value: "satellite", label: "卫星" },
         { value: "street", label: "街道" },
         { value: "nature", label: "自然" },

@@ -12,7 +12,7 @@ import store
 import tle
 from provider import _SATELLITES
 
-_FALLBACK_TLE = _SATELLITES[24278]["fallback"]
+_FALLBACK_TLE = _SATELLITES[25544]["fallback"]
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +21,7 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "_SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(store, "_TLES_FILE", tmp_path / "tles.json")
     monkeypatch.setattr(store, "_SATINFO_FILE", tmp_path / "satellite_info.json")
-    monkeypatch.setattr(tle, "_get_tle_cached", lambda norad_id=24278: _FALLBACK_TLE)
+    monkeypatch.setattr(tle, "_get_tle_cached", lambda norad_id=25544: _FALLBACK_TLE)
     monkeypatch.setattr(tle, "tle_source", lambda norad_id: "fallback")
     state._state.clear()
     state._state.update({"station": None, "output": None, "current_satellite": None})
@@ -37,7 +37,7 @@ def _passes_params(**overrides):
         "sample_interval": 60,
         "horizon": 0.0,
         "preset": "",
-        "satellite": "fo29",
+        "satellite": "iss",
     }
     params.update(overrides)
     return params
@@ -83,18 +83,18 @@ def test_custom_station_label():
 def test_state_updated_after_compute():
     passservice.compute_passes_service(_passes_params())
     st = state._state
-    assert st["station"]["satellite"] == "fo29"
-    assert st["station"]["norad_id"] == 24278
+    assert st["station"]["satellite"] == "iss"
+    assert st["station"]["norad_id"] == 25544
     assert st["station"]["hours"] == 24
-    assert st["current_satellite"] == "fo29"
-    assert st["output"]["norad_id"] == 24278
+    assert st["current_satellite"] == "iss"
+    assert st["output"]["norad_id"] == 25544
     assert st["output"]["tle_source"] == "fallback"
 
 
 def test_groundtrack_clamp():
     out = passservice.compute_groundtrack_service(
-        {"hours": 9999, "step_sec": 1, "preset": "", "satellite": "fo29"}
+        {"hours": 9999, "step_sec": 1, "preset": "", "satellite": "iss"}
     )
     assert out["hours"] == 24 * 14
     assert out["step_sec"] == 10
-    assert out["norad_id"] == 24278
+    assert out["norad_id"] == 25544

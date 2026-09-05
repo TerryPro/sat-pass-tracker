@@ -21,6 +21,10 @@ export function createViewer(container, { showClockControls = false } = {}) {
     infoBox: false,
     selectionIndicator: false,
     baseLayer: false, // 不创建默认底图，下面手动添加（避免 imageryProvider+baseLayer 冲突导致无贴图）
+    // 2D 视图固定 EPSG:4326（GeographicProjection，等距圆柱）：
+    // 必须在 Viewer 初始化时设置（无法热切换），使 2D 地图覆盖全纬度 ±90°（极点在上下边缘），
+    // 避免默认 WebMercatorProjection 将纬度截断在 ±85.05° 并在高纬区纵向拉伸导致的极区变形。
+    mapProjection: new Cesium.GeographicProjection(),
   });
   viewer.cesiumWidget.creditContainer.style.display = "none"; // 隐藏版权条（仅界面清爽）
   viewer.scene.globe.enableLighting = true; // 开启光照，太阳方位随时间变化时地表明暗随之变化
@@ -66,20 +70,35 @@ export function createInertialCameraUpdate(eciRef) {
   };
 }
 
+// 浅色底图集合：4326 全纬度 2D 下 WebMercator 在线底图只覆盖 ±85.05°，极区无瓦片，
+// 无瓦片区域的地球底色需与底图色调一致，否则露出突兀色块（浅色底图用浅海蓝，其余用暗蓝）。
+const LIGHT_BASEMAP_KINDS = ["natural_earth", "offline", "street", "terrain", "light"];
+
 // 切换底图（satvis 风格多底图）：'offline' 本地内置 Natural Earth II（离线模式，不联网）/
-// 'satellite' 卫星影像 / 'street' 街道 / 'terrain' 地形晕渲 /
+// 'natural_earth' Natural Earth II 在线瓦片 / 'satellite' 卫星影像 / 'street' 街道 / 'terrain' 地形晕渲 /
 // 'dark' 暗色 / 'light' 浅灰 / 'nature' 自然(NASA Blue Marble) / 'blackmarble' 夜光(NASA Black Marble) / 'none' 无
 // 加载为异步，带失败兜底（内置 Natural Earth 贴图）。
 export function setBasemap(viewer, kind) {
   if (!viewer) return;
   const layers = viewer.imageryLayers;
   layers.removeAll();
+  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString(
+    LIGHT_BASEMAP_KINDS.includes(kind) ? "#aad3eb" : "#0b1620"
+  );
   let p = null;
   if (kind === "offline") {
     // 地图离线模式：只使用随 Cesium 打包的本地底图（Natural Earth II），完全不联网。
     p = Cesium.TileMapServiceImageryProvider.fromUrl(
       Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII")
     );
+  } else if (kind === "natural_earth") {
+    // Natural Earth II 在线瓦片（Re:Earth Papers 公开服务，无需 key，公共领域）。
+    // 相比 Cesium 内置版（仅 z0-z2），在线源覆盖 z0-z6，可在线放大到更大尺度；z7+ 无瓦片。
+    p = new Cesium.UrlTemplateImageryProvider({
+      url: "https://papers.reearth.land/ne2/{z}/{x}/{y}.webp",
+      credit: "© Natural Earth (public domain)",
+      maximumLevel: 6,
+    });
   } else if (kind === "street") {
     // Cesium 1.144：OpenStreetMapImageryProvider 仅支持构造函数（无 fromUrl 静态方法）
     p = new Cesium.OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" });

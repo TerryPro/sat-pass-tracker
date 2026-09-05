@@ -30,11 +30,6 @@ export function fetchSatellites() {
   return httpGet("/api/satellites");
 }
 
-// 搜索卫星（按名称或 NORAD 目录号），返回候选列表供导入选择
-export function searchSatellites(query) {
-  return httpPost("/api/satellites/search", { query });
-}
-
 // 从网络导入卫星（按 NORAD 目录号，后端验证 TLE 后入库）
 export function importSatellite(noradId) {
   return httpPost("/api/satellites/import", { norad_id: noradId });

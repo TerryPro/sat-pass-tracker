@@ -25,14 +25,16 @@ function visibleHourOptions(hours) {
 const BASEMAP_OPTIONS = {
   // OpenLayers 引擎：OL 底图样式（Map2D/mapStyles.js）
   ol: [
+    { value: "natural_earth", label: "自然地球 II" },
     { value: "dark", label: "暗色" },
     { value: "light", label: "浅灰" },
     { value: "satellite", label: "卫星" },
     { value: "terrain", label: "地形" },
     { value: "standard", label: "标准" },
   ],
-  // Cesium 引擎：底图选项（保留卫星/街道/自然，去掉地形/暗色/夜光/无）
+  // Cesium 引擎：底图选项（自然地球 II/卫星/街道/自然，去掉地形/暗色/夜光/无）
   cesium: [
+    { value: "natural_earth", label: "自然地球 II" },
     { value: "satellite", label: "卫星" },
     { value: "street", label: "街道" },
     { value: "nature", label: "自然" },

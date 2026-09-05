@@ -26,10 +26,11 @@ const Globe3D = lazy(() => import("./globe3d/Globe3D.jsx"));
 const CesiumMap2D = lazy(() => import("./cesium2d/CesiumMap2D.jsx"));
 
 // 各引擎的合法底图 key（与 MapToolbar.BASEMAP_OPTIONS 对应）
-const OL_BASEMAPS = ["dark", "light", "satellite", "terrain", "standard"];
-const CESIUM_BASEMAPS = ["satellite", "street", "nature"];
+const OL_BASEMAPS = ["natural_earth", "dark", "light", "satellite", "terrain", "standard"];
+const CESIUM_BASEMAPS = ["natural_earth", "satellite", "street", "nature"];
 // OL 底图 key → Cesium key（引擎切换或传给 Globe3D/CesiumMap2D 时使用）
 const OL_TO_CESIUM_BASEMAP = {
+  natural_earth: "natural_earth",
   dark: "dark",
   light: "light",
   satellite: "satellite",
@@ -54,7 +55,7 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
   const [showGrid, setShowGrid] = useState(false); // 是否显示经纬网与经纬度标签
   const [showVisibility, setShowVisibility] = useState(false); // 是否显示地面站可视范围
   const [passMode, setPassMode] = useState("selected"); // 可见段显示模式：selected / all
-  const [mapStyle, setMapStyle] = useState("satellite"); // 底图样式
+  const [mapStyle, setMapStyle] = useState("natural_earth"); // 底图样式（默认自然地球 II）
   const [visibleHours, setVisibleHours] = useState(ALL_HOURS); // 星下点轨迹显示窗口（-1=全部，跟随计算窗口）
   const [viewMode, setViewMode] = useState("2d"); // 地图视图：2d / 3d / both（2D+3D 同时显示）
   const [eci3d, setEci3d] = useState(false); // 3D 参考系：false=地固系（ECEF），true=惯性系（ICRF）
@@ -73,13 +74,13 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
   // OL 引擎下映射到 Cesium 底图。
   const cesiumBasemap = mapOffline
     ? "offline"
-    : (cesium2d ? mapStyle : (OL_TO_CESIUM_BASEMAP[mapStyle] || "satellite"));
+    : (cesium2d ? mapStyle : (OL_TO_CESIUM_BASEMAP[mapStyle] || "natural_earth"));
 
-  // 引擎切换：底图 key 不在目标引擎合法列表时，规整为两引擎共有的 satellite，
+  // 引擎切换：底图 key 不在目标引擎合法列表时，规整为两引擎共有的 natural_earth，
   // 避免下拉空选 / 引擎拿到非法 key（例如 OL 的 light ↔ Cesium 的 street/nature）
   useEffect(() => {
     const legal = cesium2d ? CESIUM_BASEMAPS : OL_BASEMAPS;
-    if (!legal.includes(mapStyle)) setMapStyle("satellite");
+    if (!legal.includes(mapStyle)) setMapStyle("natural_earth");
   }, [cesium2d]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 显示时长的实际生效值：-1（全部）时跟随计算窗口 hours，

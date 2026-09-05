@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 import socketio
@@ -72,8 +73,10 @@ async def api_error_handler(request: Request, exc: APIError):
 
 @app.exception_handler(Exception)
 async def unhandled_error_handler(request: Request, exc: Exception):
-    # 兜底：未预期异常统一 500（与原各 handler 的 try/except 行为一致），不暴露堆栈
-    return JSONResponse({"error": f"{type(exc).__name__}: {exc}"}, status_code=500)
+    # 兜底：未预期异常统一 500（与原各 handler 的 try/except 行为一致）。
+    # 详情（含堆栈）记入服务端日志，不把内部实现细节暴露给客户端。
+    logging.getLogger("app").exception("未处理异常: %s %s", request.method, request.url.path)
+    return JSONResponse({"error": "服务器内部错误"}, status_code=500)
 
 
 app.include_router(settings.router)

@@ -58,9 +58,13 @@ def _current_position():
     station = st.get("station")
     if not station:
         return None
-    sat_key = station.get("satellite", "fo29")
+    sat_key = station.get("satellite", "iss")
     _, norad_id = _resolve_satellite({"satellite": sat_key})
-    tle = _get_tle_cached(norad_id)
+    try:
+        tle = _get_tle_cached(norad_id)
+    except Exception:
+        # TLE 获取失败（如联网失败且无本地数据）时不广播，不打断连接
+        return None
     if not tle:
         return None
     name, tle1, tle2 = tle

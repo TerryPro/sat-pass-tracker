@@ -17,7 +17,7 @@ export default function Globe3D({
   params, gt, passes, activePass, currentPos, idx,
   onSetIdx, visibleHours, showVisibility, active, passMode, liveMode,
   eci = false, onEciChange, cameraDistM = 20000000,
-  basemap = "satellite", // 底图（Cesium key，与 2D/运行态势页共用，切换 2D/3D 保持一致）
+  basemap = "natural_earth", // 底图（Cesium key，与 2D/运行态势页共用，切换 2D/3D 保持一致）
   showLighting = true,  // 光照（昼夜明暗）：受工具栏"光照"开关控制，关闭则无昼夜阴影
   showGrid = false,     // 经纬网（Graticule）：显示经纬线与 DMS 标签
 }) {

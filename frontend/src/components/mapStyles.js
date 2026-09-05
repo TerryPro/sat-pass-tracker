@@ -9,6 +9,12 @@ export function mapIsDark() {
 
 // 底图样式配置：key → { label, url, attributions }
 export const MAP_STYLES = {
+  natural_earth: {
+    label: "自然地球 II",
+    url: "https://papers.reearth.land/ne2/{z}/{x}/{y}.webp",
+    attributions: "© Natural Earth (public domain)",
+    maxZoom: 6, // Re:Earth Papers ne2 在线源原生支持 z0-z6，z7+ 无瓦片
+  },
   dark: {
     label: "暗色",
     url: "https://{a-d}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
@@ -44,5 +50,6 @@ export function createTileSource(styleKey) {
     url: cfg.url,
     attributions: cfg.attributions,
     crossOrigin: "anonymous",
+    ...(cfg.maxZoom ? { maxZoom: cfg.maxZoom } : {}),
   });
 }

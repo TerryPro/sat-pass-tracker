@@ -29,7 +29,7 @@ export default function Satellites3DPage() {
   const [orbitHiddenNorads, setOrbitHiddenNorads] = useState([]); // 不显示轨道线的卫星 NORAD 列表
   // 场景与底图设置（同卫星轨迹页 MapToolbar 风格，置于顶部控制栏）
   const [viewMode, setViewMode] = useState("3d");        // 3d|2d|columbus
-  const [basemap, setBasemap] = useState("satellite");   // satellite|street|nature
+  const [basemap, setBasemap] = useState("natural_earth");   // natural_earth|satellite|street|nature
   const [skyOn, setSkyOn] = useState(true);
   const [hdr, setHdr] = useState(true);            // HDR 渲染（satvis 的 HDR）
   const [atmosphere, setAtmosphere] = useState(true); // 大气散射（satvis 的 Atmosphere）

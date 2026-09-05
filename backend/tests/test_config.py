@@ -48,8 +48,9 @@ def test_invalid_int_falls_back(monkeypatch):
 
 
 def test_cors_origins_default():
-    assert config.CORS_ORIGINS == ["http://localhost:5173", "http://127.0.0.1:5173"]
-    assert config.CORS_ALLOW_CREDENTIALS is True
+    """默认任意来源（本地/局域网预览）；通配符来源时自动关闭携带凭据。"""
+    assert config.CORS_ORIGINS == ["*"]
+    assert config.CORS_ALLOW_CREDENTIALS is False
 
 
 def test_cors_origins_env_override(monkeypatch):

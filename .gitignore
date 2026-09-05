@@ -44,6 +44,11 @@ frontend/coverage/
 # Runtime data (settings/TLE/info caches)
 backend/data/
 
+# 运行时配置 JSON（backend/config/ 下的运行时文件不入库；satellites.json 参考目录除外）
+backend/config/settings.json
+backend/config/tles.json
+backend/config/satellite_info.json
+
 # Temp
 tmp/
 

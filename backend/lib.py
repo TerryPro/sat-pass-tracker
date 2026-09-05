@@ -18,6 +18,7 @@ from typing import List, Optional
 
 import provider  # noqa: E402
 import store  # noqa: E402
+from tle import _INFO_VALID_SECONDS  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -295,13 +296,16 @@ def get_satellite_info(norad_id: int, refresh: bool = False) -> Optional[dict]:
     """获取并缓存卫星档案信息（SatNOGS 基本信息 + AMSAT 频率）。
 
     返回 { norad_id, names, status, launch_date, operator, countries, website,
-            telemetries, frequencies, fetched_at }；
+            telemetries, frequencies, image_url, fetched_at }；
+    缓存有效期 _INFO_VALID_SECONDS（30 天），过期自动重新联网；
     若 SatNOGS 中无此星（或联网失败）返回 None 且不写入缓存（避免误缓存）。
     refresh=True 忽略缓存并强制重新联网。
     """
     saved = store._load_sat_info().get(str(norad_id))
     if saved and not refresh:
-        return _serialize_info(saved, norad_id)
+        fetched_ts = float(saved.get("fetched_ts", 0))
+        if (time.time() - fetched_ts) < _INFO_VALID_SECONDS:
+            return _serialize_info(saved, norad_id)
     try:
         meta = provider.fetch_satellite_info_online(norad_id) or {}
     except Exception:

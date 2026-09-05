@@ -25,7 +25,7 @@ const MultiGlobe = React.forwardRef(function MultiGlobe(
     active = true,
     // 场景与底图设置：视图模式 / 底图 / 星空开关（受父级控制）
     viewMode = "3d",      // 3d|2d|columbus
-    basemap = "satellite",// satellite|street|terrain|dark|nature|blackmarble|none
+    basemap = "natural_earth",// natural_earth|satellite|street|terrain|dark|nature|blackmarble|none
     skyOn = true,
     hdr = true,           // 高动态范围（scene.highDynamicRange，satvis 的 HDR）
     atmosphere = true,    // 大气散射（scene.skyAtmosphere，satvis 的 Atmosphere）

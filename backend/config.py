@@ -75,7 +75,7 @@ ON80DD_LON = get_float("GS_ON80DD_LON", 116.2917)
 ON80DD_ALT_M = get_float("GS_ON80DD_ALT_M", 44.0)
 
 # ---------------------------------------------------------------
-# 运行时数据目录（settings.json / tles.json / satellite_info.json）
+# 卫星数据文件下载目录（satellite_files；settings/TLE/卫星信息 JSON 固定位于 backend/config/）
 # ---------------------------------------------------------------
 DATA_DIR = Path(get("GS_DATA_DIR", str(Path(__file__).resolve().parent / "data")))
 

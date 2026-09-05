@@ -1,7 +1,9 @@
 """
 持久化层：设置 / 卫星列表 / TLE / 卫星信息缓存的 JSON 文件读写与规范化。
 
-数据文件位于 backend/data/（可用 GS_DATA_DIR 或 backend/.env 覆盖），
+运行时配置文件（settings.json / tles.json / satellite_info.json）固定存放于
+backend/config/（与参考目录 satellites.json 同处）；卫星数据文件（下载的原始
+数据源文件）存放于 backend/data/（可用 GS_DATA_DIR 或 backend/.env 覆盖）。
 写入方式为"读取-合并-整体写回"，支持分字段保存（如只保存主题）。
 
 所有写文件均通过 _atomic_write_json 完成：先写同目录临时文件，再 os.replace
@@ -16,8 +18,10 @@ import os
 import tempfile
 import threading
 import time
+from pathlib import Path
 
 import config
+from catalog import BUILTIN_SATELLITES  # noqa: E402
 from provider import fetch_amsat_frequencies_online  # noqa: E402
 
 logger = logging.getLogger("store")
@@ -56,44 +60,20 @@ def _atomic_write_json(path, data) -> None:
         raise
 
 # ---------------------------------------------------------------
-# 运行时数据目录与文件
+# 运行时配置文件与数据目录
 # ---------------------------------------------------------------
+# settings / TLE / 卫星信息 JSON 统一存放于 backend/config/（随代码同仓维护）
+_CONFIG_DIR = Path(__file__).resolve().parent / "config"
+_SETTINGS_FILE = _CONFIG_DIR / "settings.json"
+_TLES_FILE = _CONFIG_DIR / "tles.json"  # TLE 持久化文件
+_SATINFO_FILE = _CONFIG_DIR / "satellite_info.json"  # 卫星介绍/频率缓存
+
+# 卫星数据文件（下载的原始数据源文件）目录：仍走 GS_DATA_DIR / backend/data
 _DATA_DIR = config.DATA_DIR
-_SETTINGS_FILE = _DATA_DIR / "settings.json"
-_TLES_FILE = _DATA_DIR / "tles.json"  # TLE 持久化文件
-_SATINFO_FILE = _DATA_DIR / "satellite_info.json"  # 卫星介绍/频率缓存
 
-# 内置卫星（不可删除）：可从网络导入更多卫星（按 NORAD 目录号）
-_BUILTIN_SATELLITES = [
-    {"id": "iss", "name": "国际空间站 ISS", "norad_id": 25544, "builtin": True},
-    {"id": "css", "name": "中国空间站 CSS", "norad_id": 48274, "builtin": True},
-]
-
-# 常用卫星目录：供按名称搜索导入（中英文别名匹配，TLE 在线获取）
-_COMMON_SATELLITES = [
-    {"name": "国际空间站 ISS", "aliases": ["iss", "zarya", "iss (zarya)", "国际空间站"], "norad_id": 25544},
-    {"name": "中国空间站 CSS", "aliases": ["css", "tianhe", "tianzhou", "china space station", "中国空间站", "天宫", "天和"], "norad_id": 48274},
-    {"name": "FO-29 (JAS-2)", "aliases": ["fo29", "fo-29", "jas-2", "jas 2"], "norad_id": 24278},
-    {"name": "NOAA-15", "aliases": ["noaa 15", "noaa15"], "norad_id": 25338},
-    {"name": "NOAA-18", "aliases": ["noaa 18", "noaa18"], "norad_id": 28654},
-    {"name": "NOAA-19", "aliases": ["noaa 19", "noaa19"], "norad_id": 33591},
-    {"name": "Meteor-M2", "aliases": ["meteor", "meteor m2", "meteor-m2"], "norad_id": 40069},
-    {"name": "Meteor-M2-2", "aliases": ["meteor m2 2", "meteor-m2-2"], "norad_id": 44387},
-    {"name": "风云一号 C (FY-1C)", "aliases": ["fy-1c", "fy 1c", "风云一号"], "norad_id": 25730},
-    {"name": "风云三号 C (FY-3C)", "aliases": ["fy-3c", "fy 3c", "风云三号"], "norad_id": 39260},
-    {"name": "风云三号 D (FY-3D)", "aliases": ["fy-3d", "fy 3d"], "norad_id": 43010},
-    {"name": "风云四号 A (FY-4A)", "aliases": ["fy-4a", "fy 4a", "风云四号"], "norad_id": 41882},
-    {"name": "风云四号 B (FY-4B)", "aliases": ["fy-4b", "fy 4b"], "norad_id": 47828},
-    {"name": "哈勃空间望远镜 Hubble", "aliases": ["hubble", "hst"], "norad_id": 20580},
-    {"name": "Terra (EOS AM-1)", "aliases": ["terra", "eos am"], "norad_id": 25994},
-    {"name": "Aqua (EOS PM-1)", "aliases": ["aqua", "eos pm"], "norad_id": 27424},
-    {"name": "Aura", "aliases": ["aura", "eos aura"], "norad_id": 28376},
-    {"name": "Landsat-8", "aliases": ["landsat 8", "landsat8"], "norad_id": 39084},
-    {"name": "Sentinel-2A", "aliases": ["sentinel 2a", "sentinel-2a"], "norad_id": 40697},
-    {"name": "GOES-16", "aliases": ["goes 16", "goes16"], "norad_id": 41866},
-    {"name": "资源三号 ZY-3", "aliases": ["zy-3", "zy 3", "资源三号"], "norad_id": 38046},
-    {"name": "高分一号 GF-1", "aliases": ["gf-1", "gf 1", "高分一号"], "norad_id": 39150},
-]
+# 内置卫星（不可删除）：可从网络导入更多卫星（按 NORAD 目录号）。
+# 数据来源为 backend/config/satellites.json（catalog），此处不重复硬编码。
+_BUILTIN_SATELLITES = BUILTIN_SATELLITES
 
 # 内置地面站（不可删除）：仅管理经纬度 + 海拔
 _BUILTIN_STATIONS = [
@@ -119,7 +99,7 @@ DEFAULT_SETTINGS = {
     "lat": config.DEFAULT_LAT,
     "lon": config.DEFAULT_LON,
     "alt": config.DEFAULT_ALT_M,
-    "satellite": "fo29",
+    "satellite": "iss",
     "hours": 48,
     "sample_interval": 60,
     "theme": "dark",
@@ -302,10 +282,11 @@ def _load_sat_info() -> dict:
 
 
 def _save_sat_info(norad_id: int, info: dict, fetched_ts: float) -> None:
-    """写入卫星介绍/频率缓存。"""
-    infos = _load_sat_info()
-    infos[str(norad_id)] = {**info, "fetched_ts": fetched_ts}
-    _atomic_write_json(_SATINFO_FILE, infos)
+    """写入卫星介绍/频率缓存（读-改-写加锁，避免并发丢失更新）。"""
+    with _store_lock:
+        infos = _load_sat_info()
+        infos[str(norad_id)] = {**info, "fetched_ts": fetched_ts}
+        _atomic_write_json(_SATINFO_FILE, infos)
     logger.info("卫星信息已保存: norad=%s", norad_id)
 
 
@@ -321,14 +302,18 @@ _amsat_freq_lock = threading.Lock()
 
 
 def _get_amsat_freq_map() -> dict:
-    """返回按 norad_id 分组的 AMSAT 频率表。"""
+    """返回按 norad_id 分组的 AMSAT 频率表。
+
+    以"上次拉取时间"判断缓存是否过期：联网失败也记录时间戳，
+    避免离线/失败时每个请求都重复拉取 83KB 文件（TTL 内不再重试）。
+    """
     global _AMSAT_FREQ_MAP, _AMSAT_FREQ_FETCHED_AT
     now = time.time()
-    if _AMSAT_FREQ_MAP and (now - _AMSAT_FREQ_FETCHED_AT) < _AMSAT_FREQ_TTL:
+    if (now - _AMSAT_FREQ_FETCHED_AT) < _AMSAT_FREQ_TTL:
         return _AMSAT_FREQ_MAP
     with _amsat_freq_lock:
         # 双检锁：等待中的线程拿到锁后复查缓存是否已就绪
-        if _AMSAT_FREQ_MAP and (time.time() - _AMSAT_FREQ_FETCHED_AT) < _AMSAT_FREQ_TTL:
+        if (time.time() - _AMSAT_FREQ_FETCHED_AT) < _AMSAT_FREQ_TTL:
             return _AMSAT_FREQ_MAP
         try:
             rows = fetch_amsat_frequencies_online()

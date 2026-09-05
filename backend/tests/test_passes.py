@@ -17,12 +17,12 @@ from astro import (
 )
 from provider import _SATELLITES
 
-FO29_TLE = _SATELLITES[24278]["fallback"]
+ISS_TLE = _SATELLITES[25544]["fallback"]
 BEIJING = {"lat": 39.9042, "lon": 116.4074, "alt_m": 44.0}
 
 
 def _compute(hours=48, horizon=0.0, sample_interval=30):
-    name, tle1, tle2 = FO29_TLE
+    name, tle1, tle2 = ISS_TLE
     return compute_passes(
         tle_name=name,
         tle1=tle1,
@@ -38,7 +38,7 @@ def _compute(hours=48, horizon=0.0, sample_interval=30):
 
 def test_passes_nonempty_and_ordered():
     passes, _ = _compute()
-    assert passes, "48 小时内应至少有一次 FO-29 过境"
+    assert passes, "48 小时内应至少有一次 ISS 过境"
     aos = [datetime.fromisoformat(p.aos) for p in passes]
     los = [datetime.fromisoformat(p.los) for p in passes]
     assert aos == sorted(aos), "过境应按 AOS 时间升序"
@@ -70,7 +70,7 @@ def test_horizon_mask_reduces_or_equal():
 
 
 def test_groundtrack_shape():
-    name, tle1, tle2 = FO29_TLE
+    name, tle1, tle2 = ISS_TLE
     pts = compute_groundtrack(
         tle_name=name,
         tle1=tle1,
@@ -91,7 +91,7 @@ def test_groundtrack_shape():
 
 
 def test_current_position_fields():
-    name, tle1, tle2 = FO29_TLE
+    name, tle1, tle2 = ISS_TLE
     pos = compute_current_position(tle1, tle2, BEIJING["lat"], BEIJING["lon"], BEIJING["alt_m"])
     assert pos is not None
     for key in ("t", "az", "el", "r_km", "lat", "lon", "alt_km"):
@@ -124,7 +124,7 @@ def test_total_sample_cap(monkeypatch):
 def test_groundtrack_point_cap(monkeypatch):
     """星下点轨迹点数超上限时自动放大步长。"""
     monkeypatch.setattr(astro_mod, "MAX_GROUNDTRACK_POINTS", 100)
-    name, tle1, tle2 = FO29_TLE
+    name, tle1, tle2 = ISS_TLE
     pts = compute_groundtrack(
         tle_name=name, tle1=tle1, tle2=tle2,
         lat=BEIJING["lat"], lon=BEIJING["lon"], alt_m=BEIJING["alt_m"],
@@ -135,7 +135,7 @@ def test_groundtrack_point_cap(monkeypatch):
 
 def _compute_passes_raw(hours=48, sample_interval_sec=60):
     """直接调用 compute_passes（供总量保护测试用）。"""
-    name, tle1, tle2 = FO29_TLE
+    name, tle1, tle2 = ISS_TLE
     return compute_passes(
         tle_name=name, tle1=tle1, tle2=tle2,
         lat=BEIJING["lat"], lon=BEIJING["lon"], alt_m=BEIJING["alt_m"],
@@ -163,7 +163,7 @@ def test_current_position_invalid_tle_returns_none():
 
 def test_groundtrack_step_clamped_to_min():
     """过小步长不应产生过量点数（点数上限保护自动放大步长）。"""
-    name, tle1, tle2 = FO29_TLE
+    name, tle1, tle2 = ISS_TLE
     pts = compute_groundtrack(
         tle_name=name, tle1=tle1, tle2=tle2,
         lat=BEIJING["lat"], lon=BEIJING["lon"], alt_m=BEIJING["alt_m"],

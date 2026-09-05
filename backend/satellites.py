@@ -9,20 +9,16 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter
 
+import lib  # noqa: E402
 from exceptions import NotFoundError, ValidationError  # noqa: E402
-from provider import fetch_satellite_info_online, fetch_tle_online  # noqa: E402
+from provider import fetch_tle_online  # noqa: E402
 from store import (  # noqa: E402
-    _COMMON_SATELLITES,
-    _get_amsat_freq_map,
-    _load_sat_info,
     _load_satellites,
     _load_tles,
-    _save_sat_info,
     _save_satellites,
     _save_tle,
 )
 from tle import (  # noqa: E402
-    _INFO_VALID_SECONDS,
     _TLE_VALID_SECONDS,
     _clean_sat_name,
     _get_tle_cached,
@@ -60,45 +56,6 @@ def api_get_satellites():
             item["epoch"] = ""
         out.append(item)
     return {"satellites": out}
-
-
-@router.post("/api/satellites/search")
-def api_search_satellites(payload: dict):
-    """按名称或 NORAD 目录号搜索卫星（供导入前选择）。
-
-    名称搜索：在常用卫星目录中做中英文模糊匹配，再在线获取 TLE；
-    纯数字：直接按 NORAD 目录号查询。
-    """
-    query = str(payload.get("query", "")).strip()
-    if not query:
-        raise ValidationError("请输入卫星名称或 NORAD 目录号")
-    # 纯数字 → 直接按 NORAD 目录号查询
-    if query.isdigit():
-        nid = int(query)
-        tle = fetch_tle_online(norad_id=nid)
-        if tle is None:
-            raise NotFoundError(f"未找到 NORAD {nid} 对应的卫星")
-        tle_name, tle1, tle2 = tle
-        return {
-            "results": [
-                {
-                    "name": _clean_sat_name(tle_name),
-                    "norad_id": nid,
-                    "tle1": tle1,
-                    "tle2": tle2,
-                }
-            ]
-        }
-    # 名称搜索：在常用卫星目录中匹配（中英文，不区分大小写），即时返回候选列表
-    # TLE 在用户确认导入时再在线获取，避免多颗匹配时等待过久
-    q = query.lower()
-    matched = [
-        s for s in _COMMON_SATELLITES
-        if q in s["name"].lower() or any(q in a.lower() for a in s.get("aliases", []))
-    ]
-    if not matched:
-        raise NotFoundError(f"未找到与“{query}”匹配的卫星，可尝试英文名称或 NORAD 目录号")
-    return {"results": [{"name": s["name"], "norad_id": s["norad_id"]} for s in matched[:8]]}
 
 
 @router.post("/api/satellites/import")
@@ -162,46 +119,32 @@ def api_satellite_detail(sat_id: str):
 
 @router.get("/api/satellites/{sat_id}/info")
 def api_satellite_info(sat_id: str):
-    """卫星介绍与频率信息：SatNOGS 基本信息 + AMSAT 业余卫星频率（30 天本地缓存）。"""
+    """卫星介绍与频率信息：SatNOGS 基本信息 + AMSAT 业余卫星频率（30 天本地缓存）。
+
+    获取/缓存逻辑收敛到 lib.get_satellite_info，与卫星库页（/api/library/info）共用一套实现。
+    """
     sat = _find_satellite(sat_id)
     if not sat:
         raise NotFoundError("卫星不存在")
     nid = int(sat["norad_id"])
-    now = time.time()
-    infos = _load_sat_info()
-    saved = infos.get(str(nid))
-    if saved and (now - float(saved.get("fetched_ts", 0))) < _INFO_VALID_SECONDS:
-        info = saved
-    else:
-        meta = fetch_satellite_info_online(nid) or {}
-        freqs = _get_amsat_freq_map().get(str(nid), [])
-        info = {
-            "names": meta.get("names", ""),
-            "status": meta.get("status", ""),
-            "launch_date": meta.get("launch_date", ""),
-            "operator": meta.get("operator", ""),
-            "countries": meta.get("countries", ""),
-            "website": meta.get("website", ""),
-            "telemetries": meta.get("telemetries", []),
-            "frequencies": freqs,
-            "norad_id": nid,
-            "fetched_ts": now,
-        }
-        _save_sat_info(nid, info, now)
-    return {
+    base = {
         "id": sat["id"],
         "name": sat["name"],
         "norad_id": nid,
-        "names": info.get("names", ""),
-        "status": info.get("status", ""),
-        "launch_date": info.get("launch_date", ""),
-        "operator": info.get("operator", ""),
-        "countries": info.get("countries", ""),
-        "website": info.get("website", ""),
-        "telemetries": info.get("telemetries", []),
-        "frequencies": info.get("frequencies", []),
-        "fetched_at": datetime.fromtimestamp(float(info.get("fetched_ts", now)), tz=timezone.utc).isoformat(),
+        "names": "",
+        "status": "",
+        "launch_date": "",
+        "operator": "",
+        "countries": "",
+        "website": "",
+        "telemetries": [],
+        "frequencies": [],
+        "fetched_at": "",
     }
+    info = lib.get_satellite_info(nid)
+    if info is not None:
+        base.update(info)
+    return base
 
 
 @router.post("/api/satellites/{sat_id}/refresh")

@@ -116,12 +116,8 @@ def _ts_from_dt(ts, dt: datetime):
 
 
 def _ts_from_dt_arr(ts, dts):
-    """List/array of Python datetime → skyfield Time."""
-    try:
-        return ts.from_datetimes(list(dts))
-    except Exception:
-        # from_datetimes 不可用时，对每一项转换
-        return ts.from_datetime(list(dts))
+    """List/array of Python datetime → skyfield Time. Skyfield≥1.53 均支持 from_datetimes。"""
+    return ts.from_datetimes(list(dts))
 
 
 def _time_to_dt(t):
@@ -278,8 +274,9 @@ def compute_passes(
 
         # 采样计划：过境过长 + 间隔过密时自动放大间隔，控制单次过境数据量
         n, step_sec = _sampling_plan(duration, sample_interval_sec)
+        # 采样点不超过 LOS：短过境（时长 < 间隔）时第 2 点可能在 LOS 之后，截断到 LOS
         sample_times_dt = [
-            aos_dt + timedelta(seconds=i * step_sec)
+            min(aos_dt + timedelta(seconds=i * step_sec), los_dt)
             for i in range(n)
         ]
         # 确保 LOS 也采样一次

@@ -75,12 +75,13 @@ def _clean_sat_name(name: str) -> str:
     return name.strip()
 
 
-def _get_tle_cached(norad_id: int = 24278):
+def _get_tle_cached(norad_id: int = 25544):
     """TLE 获取策略：内存缓存(1h) → 本地持久化(12h 有效) → 联网更新并落盘。
 
     返回 (name, tle1, tle2)。联网成功后写入 tles.json，重启后不再重复下载。
     tle_mode=builtin（离线模式，设置页可切换）时跳过联网：直接用本地持久化
     （不限新鲜度）或内置历史 TLE；仅当两者都无数据（用户导入的非内置卫星）才联网兜底。
+    联网失败且无本地/内置数据时抛 ValueError（非内置卫星不再回退到别的卫星 TLE）。
     """
     now = time.time()
     key = f"tle_{norad_id}"
@@ -114,7 +115,13 @@ def _get_tle_cached(norad_id: int = 24278):
                     _tle_source[norad_id] = "builtin"
                 else:
                     # 本地与内置都没有（用户导入的非内置卫星）：联网兜底一次
-                    name, tle1, tle2, is_fallback = fetch_latest_tle(norad_id=norad_id)
+                    result = fetch_latest_tle(norad_id=norad_id)
+                    if result is None:
+                        raise ValueError(
+                            f"无法获取卫星 NORAD {norad_id} 的有效 TLE"
+                            "（联网失败且无本地/内置数据）"
+                        )
+                    name, tle1, tle2, is_fallback = result
                     _tle_source[norad_id] = "fallback" if is_fallback else "online"
             _tle_cache[key] = (name, tle1, tle2)
             _tle_cache[fetched_key] = now
@@ -127,7 +134,13 @@ def _get_tle_cached(norad_id: int = 24278):
                 source=_tle_source[norad_id],
             )
             return _tle_cache[key]
-        name, tle1, tle2, is_fallback = fetch_latest_tle(norad_id=norad_id)
+        result = fetch_latest_tle(norad_id=norad_id)
+        if result is None:
+            raise ValueError(
+                f"无法获取卫星 NORAD {norad_id} 的有效 TLE"
+                "（联网失败且无本地/内置数据）"
+            )
+        name, tle1, tle2, is_fallback = result
         _tle_cache[key] = (name, tle1, tle2)
         _tle_cache[fetched_key] = now
         _tle_source[norad_id] = "fallback" if is_fallback else "online"
@@ -145,10 +158,10 @@ def _get_tle_cached(norad_id: int = 24278):
 def _resolve_satellite(params: dict) -> Tuple[str, int]:
     """解析卫星参数，返回 (id, norad_id)。
 
-    支持内置 key（fo29/iss/css）或任意 NORAD 目录号（数字字符串），
-    从持久化的卫星列表中查找；未知则回退到 FO-29。
+    支持内置 key（iss/css）或任意 NORAD 目录号（数字字符串），
+    从持久化的卫星列表中查找；未知则回退到 ISS。
     """
-    sat = str(params.get("satellite", "fo29")).lower()
+    sat = str(params.get("satellite", "iss")).lower()
     sats = _load_satellites()
     for s in sats:
         if s["id"] == sat or str(s["norad_id"]) == sat:
@@ -160,7 +173,7 @@ def _resolve_satellite(params: dict) -> Tuple[str, int]:
                 return s["id"], nid
     except ValueError:
         pass
-    return "fo29", 24278
+    return "iss", 25544
 
 
 def _parse_tle_epoch(tle1: str):

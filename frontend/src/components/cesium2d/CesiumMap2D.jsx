@@ -116,6 +116,8 @@ export default function CesiumMap2D({
     viewer.scene.skyBox.show = false;
     if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = false;
     viewer.scene.highDynamicRange = false;
+    // 无瓦片区域底色（4326 全纬度 ±90° 下在线 WebMercator 底图只覆盖 ±85°，极区无瓦片）
+    // 由 setBasemap 按底图深浅自适应设置（浅色底图浅海蓝 / 深色底图暗蓝）。
     // 光照（enableLighting）不在此设置：由下方 showTerminator effect 控制昼夜阴影随时钟着色
     // 超采样渲染：缓解 SCENE2D 下 polyline/ellipse 锯齿（2D 无 MSAA，靠提高分辨率换取平滑）
     viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 2);
