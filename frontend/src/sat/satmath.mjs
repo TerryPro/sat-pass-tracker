@@ -182,12 +182,14 @@ export function buildOrbitCache(sats, start, stepSec = 60, limit = MAX_ALL_PINS)
 }
 
 /**
- * 用轨道缓存求某颗星在任意时刻的 ECI 位置（线性插值，绕周期取模，闭环无缝）。
+ * 用轨道缓存求某颗星在任意时刻的 ECI 位置，写入复用出参 out（线性插值，绕周期取模，闭环无缝）。
+ * 供每帧热路径原地更新，避免新建 {x,y,z} 对象（GC 压力）。
  * @param {ReturnType<typeof buildOrbitCache>[number]} cache
  * @param {number} ms 目标时刻（毫秒时间戳）
- * @returns {{x,y,z}}
+ * @param {{x:number,y:number,z:number}} out 复用出参对象
+ * @returns {{x,y,z}} out（原对象，便于链式使用）
  */
-export function interpEciAtMs(cache, ms) {
+export function interpEciInto(cache, ms, out) {
   const periodMs = cache.periodMs;
   const offset = ((ms - cache.refT) % periodMs + periodMs) % periodMs;
   const stepMs = cache.stepMs;
@@ -197,11 +199,21 @@ export function interpEciAtMs(cache, ms) {
   const s0 = cache.samples[a];
   const s1 = cache.samples[b];
   const frac = (offset - a * stepMs) / stepMs;
-  return {
-    x: s0.eci.x + (s1.eci.x - s0.eci.x) * frac,
-    y: s0.eci.y + (s1.eci.y - s0.eci.y) * frac,
-    z: s0.eci.z + (s1.eci.z - s0.eci.z) * frac,
-  };
+  out.x = s0.eci.x + (s1.eci.x - s0.eci.x) * frac;
+  out.y = s0.eci.y + (s1.eci.y - s0.eci.y) * frac;
+  out.z = s0.eci.z + (s1.eci.z - s0.eci.z) * frac;
+  return out;
+}
+
+/**
+ * 用轨道缓存求某颗星在任意时刻的 ECI 位置（返回新对象）。
+ * 非热路径调用；每帧热路径请用 interpEciInto 复用出参避免分配。
+ * @param {ReturnType<typeof buildOrbitCache>[number]} cache
+ * @param {number} ms 目标时刻（毫秒时间戳）
+ * @returns {{x,y,z}}
+ */
+export function interpEciAtMs(cache, ms) {
+  return interpEciInto(cache, ms, { x: 0, y: 0, z: 0 });
 }
 
 /**

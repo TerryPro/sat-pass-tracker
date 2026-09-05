@@ -24,10 +24,13 @@ export function useSatellitePoints({
       const gp = getPositionsAtRef.current;
       if (gp && pointsCollectionRef.current) {
         for (const p of gp(d)) {
+          if (!p.isValid || !isFinite(p.eci.x)) continue;
+          // 同一颗星的点与标签共用一次 ECI→ECEF 转换（此前各算一次，开标签时开销翻倍）
+          const ecef = eciToEcef(p.eci, d);
           const pt = noradToPointRef.current[p.norad];
-          if (pt && p.isValid && isFinite(p.eci.x)) pt.position = eciToEcef(p.eci, d);
+          if (pt) pt.position = ecef;
           const lab = noradToLabelRef.current[p.norad];
-          if (lab && p.isValid && isFinite(p.eci.x)) lab.position = eciToEcef(p.eci, d);
+          if (lab) lab.position = ecef;
         }
       }
     };

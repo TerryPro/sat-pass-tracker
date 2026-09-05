@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import { Cesium, loadCesium } from "./cesiumGlobal.js";
+import { resetIcrfCache } from "./globeUtils.js";
 import { useViewerLifecycle } from "./useViewerLifecycle.js";
 import { useSceneSettings } from "./useSceneSettings.js";
 import { useClockControls } from "./useClockControls.js";
@@ -84,6 +85,20 @@ const MultiGlobe = React.forwardRef(function MultiGlobe(
     orbitEntitiesRef, highlightOrbitRef,
   });
   useInertialCamera({ viewerRef, state, frame, viewMode });
+
+  // 每帧开始清空 ICRF→Fixed 矩阵缓存：缓存仅在单帧内复用（同一时刻矩阵相同）。
+  // preUpdate 在 scene.render 前触发，覆盖本帧轨道线 CallbackProperty 与卫星点 onTick 两处计算。
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || state !== "ready") return;
+    const listener = () => resetIcrfCache();
+    viewer.scene.preUpdate.addEventListener(listener);
+    return () => {
+      // 卸载时 viewer 可能已 destroy（scene 被置空），经 viewerRef 判空再移除
+      const v = viewerRef.current;
+      if (v && v.scene && v.scene.preUpdate) v.scene.preUpdate.removeEventListener(listener);
+    };
+  }, [state]);
 
   // 暴露给父级：setTime 设置时钟（供「回到当前」等使用）
   React.useImperativeHandle(ref, () => ({

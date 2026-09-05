@@ -2,7 +2,7 @@
 // 从 GroundTrack 中拆出的状态：idx / playing / liveMode / playRate，
 // 以及播放推进间隔（固定 250ms tick，按倍速比率含小数累计步进）与
 // 回看模式下时间轴索引到选中过境的联动。
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // 推演基准倍速（倍速选项见 TimelineBar.jsx 的 PLAY_RATES）
 const BASE_RATE = 240;
@@ -52,15 +52,20 @@ export function usePlayback({ gt, passes, activeIdx, onSelect }) {
     return () => clearInterval(id);
   }, [playing, gt, liveMode, playRate]);
 
+  // 过境中点时刻（ms）预计算：只随 passes 变化，避免播放时每次 idx 变化都重复解析全部过境的 aos/los
+  const passMids = useMemo(
+    () => (passes || []).map((p) => (Date.parse(p.aos) + Date.parse(p.los)) / 2),
+    [passes]
+  );
+
   // 回看（播放）模式：时间轴索引变化时，联动选中该时间点所属的过境，
   // 使甘特图上方"选中过境"信息随拖动/播放一起更新。
   useEffect(() => {
-    if (liveMode || !gt || !gt.points || !gt.points[idx] || !passes || !passes.length) return;
-    const t = new Date(gt.points[idx].t).getTime();
+    if (liveMode || !gt || !gt.points || !gt.points[idx] || !passMids.length) return;
+    const t = Date.parse(gt.points[idx].t);
     let best = activeIdx || 0;
     let bestD = Infinity;
-    passes.forEach((p, i) => {
-      const mid = (new Date(p.aos).getTime() + new Date(p.los).getTime()) / 2;
+    passMids.forEach((mid, i) => {
       const d = Math.abs(mid - t);
       if (d < bestD) {
         bestD = d;
@@ -68,7 +73,7 @@ export function usePlayback({ gt, passes, activeIdx, onSelect }) {
       }
     });
     if (best !== activeIdx) onSelect(best);
-  }, [idx, passes, activeIdx, onSelect, liveMode, gt]);
+  }, [idx, passMids, activeIdx, onSelect, liveMode, gt]);
 
   return { idx, setIdx, playing, setPlaying, liveMode, setLiveMode, playRate, setPlayRate };
 }

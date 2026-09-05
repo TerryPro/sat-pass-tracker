@@ -17,7 +17,7 @@ import { usePlayback } from "../hooks/usePlayback.js";
 import { useAppTheme } from "../hooks/useAppTheme.js";
 import { useResizeRedraw } from "../hooks/useResizeRedraw.js";
 import { ALL_HOURS } from "../constants.js";
-import { drawGanttToCanvas } from "./gantt.js";
+import { drawGanttBase, drawGanttOverlay } from "./gantt.js";
 
 // 3D 视图懒加载：Cesium 体积大（~1MB），仅在切换到 3D / 2D+3D 时下载解析，
 // 避免默认 2D 首屏也被迫加载 Cesium，明显加快首张地图出图。
@@ -62,7 +62,8 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
   const [showTerminator, setShowTerminator] = useState(true); // 是否显示晨昏线
   // 应用主题（设置页 theme 字段）：甘特图画布配色按主题取色
   const theme = useAppTheme();
-  const ganttRef = useRef(null); // 时间-仰角甘特图 canvas
+  const ganttRef = useRef(null); // 时间-仰角甘特图 canvas（可见）
+  const ganttBaseRef = useRef(null); // 甘特图静态层离屏缓存（网格/坐标轴/过境曲线）；播放时只贴图 + 画指示线
   // 2D 地图引擎（设置页「计算」组配置）：ol（OpenLayers，默认）| cesium（Cesium 2D 对照测试）
   const map2dEngine = useSelector((s) => s.settings.values?.map2d_engine || "ol");
   const cesium2d = map2dEngine === "cesium";
@@ -87,25 +88,57 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
   // 保证轨迹渲染/甘特图/推演始终覆盖完整计算时长（切到 72h/168h 后自动全窗口）。
   const effVisibleHours = visibleHours === ALL_HOURS ? hours || 48 : visibleHours;
 
-  // 时间-仰角甘特图绘制：见 gantt.js（drawGanttToCanvas）
-  const drawGantt = () =>
-    drawGanttToCanvas({
-      canvas: ganttRef.current,
-      gt,
-      passes,
-      activeIdx,
-      idx,
-      visibleHours: effVisibleHours,
+  // 甘特图分两层绘制（见 gantt.js）：静态层（网格/坐标轴/过境曲线）缓存到离屏 canvas，
+  // 播放时 idx 高频变化只贴图 + 画当前位置指示线，避免每 tick 全量重绘所有过境曲线。
+  // 离屏 canvas 无布局尺寸，宽高取可见 canvas 的 getBoundingClientRect（CSS 像素）传入。
+  const ganttCssSize = () => {
+    const c = ganttRef.current;
+    if (!c) return null;
+    const r = c.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 ? { w: r.width, h: r.height } : null;
+  };
+
+  // 重绘静态层到离屏 base（不含指示线）
+  const drawGanttBaseLayer = () => {
+    const s = ganttCssSize();
+    if (!s) return;
+    if (!ganttBaseRef.current) ganttBaseRef.current = document.createElement("canvas");
+    drawGanttBase({
+      canvas: ganttBaseRef.current, gt, passes, activeIdx,
+      visibleHours: effVisibleHours, width: s.w, height: s.h,
     });
+  };
 
-  // 甘特图重绘：数据/选中/索引/显示时长/主题变化时
+  // 合成一帧：贴静态层 + 画指示线；base 缺失或尺寸不符（首帧 / resize / 侧栏切换）时先重绘 base
+  const drawGanttFrame = () => {
+    const s = ganttCssSize();
+    if (!s) return;
+    const dpr = window.devicePixelRatio || 1;
+    const base = ganttBaseRef.current;
+    if (!base || base.width !== Math.round(s.w * dpr) || base.height !== Math.round(s.h * dpr)) {
+      drawGanttBaseLayer();
+    }
+    drawGanttOverlay({
+      canvas: ganttRef.current, base: ganttBaseRef.current, gt, idx,
+      visibleHours: effVisibleHours, width: s.w, height: s.h,
+    });
+  };
+
+  // 静态层重绘：数据/选中/显示时长/主题变化时（随后合成一帧）
   useEffect(() => {
-    drawGantt();
+    drawGanttBaseLayer();
+    drawGanttFrame();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gt, passes, activeIdx, idx, visibleHours, theme]);
+  }, [gt, passes, activeIdx, visibleHours, theme]);
 
-  // 窗口尺寸 / 侧栏折叠变化 → 重绘甘特图（地图 fit 由 Map2D 内部处理）
-  useResizeRedraw(drawGantt, [sidebarVisible]);
+  // 指示线：仅 idx 变化时合成一帧（贴缓存 base + 画线，播放 4Hz 走这条轻量路径）
+  useEffect(() => {
+    drawGanttFrame();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx]);
+
+  // 窗口尺寸 / 侧栏折叠变化 → 重绘静态层 + 合成（地图 fit 由 Map2D 内部处理）
+  useResizeRedraw(() => { drawGanttBaseLayer(); drawGanttFrame(); }, [sidebarVisible]);
 
   return (
     <Paper
@@ -117,6 +150,9 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
         display: "flex",
         flexDirection: "column",
         borderRadius: 1.25,
+        // 视口过矮（工具栏换行 + 甘特图/时间轴固定高度）时卡片内部滚动，
+        // 避免地图区被挤到 0（配合下方视图容器的 minHeight 保底）
+        overflowY: "auto",
       }}
     >
       <MapToolbar
@@ -147,7 +183,8 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
       <Box
         sx={{
           flex: 1,
-          minHeight: 0,
+          // 地图区高度保底：视口过矮时不被工具栏/甘特图/时间轴挤到 0（超出由 Paper 滚动承接）
+          minHeight: 240,
           display: "flex",
           flexDirection: viewMode === "both" ? "row" : "column",
           gap: 1.5,
@@ -277,6 +314,7 @@ export default function GroundTrack({ params, passes, activeIdx, onSelect, activ
             sx={{
               width: "100%",
               height: 110,
+              flexShrink: 0,
               mt: 1.25,
               borderRadius: "8px",
               border: "1px solid",

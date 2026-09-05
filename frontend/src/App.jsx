@@ -1,16 +1,20 @@
-import React, { useEffect } from "react";
+import React, { useEffect, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import AppShell from "./layout/AppShell.jsx";
 import TrackPage from "./pages/TrackPage.jsx";
-import SettingsPage from "./pages/SettingsPage.jsx";
-import SatellitePage from "./pages/SatellitePage.jsx";
-import Satellites3DPage from "./pages/Satellites3DPage.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { createAppTheme, applyThemeCssVars } from "./theme.js";
 import { loadSettings } from "./slices/settingsSlice.js";
+
+// 次级页面路由级懒加载：卫星管理 / 3D 运行态势 / 系统配置各自成块，仅导航到时才下载，
+// 首屏（/track）不加载它们的代码及其独有依赖（如 3D 态势页的 satellite.js / MultiGlobe）。
+// TrackPage 为落地路由，保持同步加载避免首屏 fallback 闪烁；Suspense 边界见 AppShell 的 Outlet。
+const SatellitePage = lazy(() => import("./pages/SatellitePage.jsx"));
+const Satellites3DPage = lazy(() => import("./pages/Satellites3DPage.jsx"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage.jsx"));
 
 // 根据 Redux 设置中的 theme 字段动态生成主题，并同步自定义 CSS 变量
 function ThemedApp() {

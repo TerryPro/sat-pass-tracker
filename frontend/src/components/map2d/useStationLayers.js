@@ -1,5 +1,5 @@
 // 2D 地图：地面站标记 + 可视范围图层 hook。
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Feature from "ol/Feature";
 import LineString from "ol/geom/LineString";
 import Point from "ol/geom/Point";
@@ -8,6 +8,9 @@ import { Circle, Fill, Stroke, Style, Text } from "ol/style";
 import { fromLonLat } from "ol/proj";
 import { mapIsDark } from "../mapStyles.js";
 import { computeFootprint, satAltKm } from "../trackgeo.js";
+
+// 按卫星类型的默认可视范围半径高度（km）：无过境峰值/实时数据时的兜底
+const SAT_HEIGHT_KM = { iss: 420, css: 400 };
 
 export function useStationLayers({
   mapObjRef, stationSourceRef, stationFootprintSourceRef,
@@ -52,36 +55,40 @@ export function useStationLayers({
     if (layer) layer.setVisible(showVisibility);
   }, [showVisibility, mapObjRef]);
 
-  // 优先用当前选中过境的最大仰角点反算卫星高度，其次用实时位置，最后按卫星类型默认值
-  function resolveSatHeight() {
-    // 1) 当前选中过境的最大仰角点：过境期间离地面站最近，高度最具代表性
-    if (activePass && gt && gt.points && gt.points.length) {
-      const tPeak = new Date(activePass.max_elevation_at).getTime();
-      let best = null;
-      let bestD = Infinity;
-      for (const p of gt.points) {
-        const dt = Math.abs(new Date(p.t).getTime() - tPeak);
-        if (dt < bestD) {
-          bestD = dt;
-          best = p;
-        }
-      }
-      if (best && typeof best.r_km === "number" && typeof best.el === "number") {
-        const h = satAltKm(best.r_km, best.el, alt);
-        if (isFinite(h) && h > 0) return h;
+  // 选中过境峰值处的卫星高度：只随 activePass/gt/alt 变化，与实时 currentPos 无关。
+  // 单独 memo，避免每次 currentPos（实时 2s）都重跑对全部 gt.points 的 O(N) 峰值搜索。
+  const peakAltKm = useMemo(() => {
+    if (!activePass || !activePass.max_elevation_at || !gt || !gt.points || !gt.points.length) return null;
+    const tPeak = Date.parse(activePass.max_elevation_at);
+    let best = null;
+    let bestD = Infinity;
+    for (const p of gt.points) {
+      const dt = Math.abs(Date.parse(p.t) - tPeak);
+      if (dt < bestD) {
+        bestD = dt;
+        best = p;
       }
     }
+    if (best && typeof best.r_km === "number" && typeof best.el === "number") {
+      const h = satAltKm(best.r_km, best.el, alt);
+      if (isFinite(h) && h > 0) return h;
+    }
+    return null;
+  }, [activePass, gt, alt]);
 
-    // 2) 实时位置数据
+  // 通视圆半径所用卫星高度：峰值优先，其次实时位置，最后按卫星类型默认。
+  const resolvedAltKm = useMemo(() => {
+    if (peakAltKm != null) return peakAltKm;
     if (currentPos && typeof currentPos.r_km === "number" && typeof currentPos.el === "number") {
       const h = satAltKm(currentPos.r_km, currentPos.el, alt);
       if (isFinite(h) && h > 0) return h;
     }
-
-    // 3) 按卫星类型默认值（由 TLE 平均运动估算）
-    const SAT_HEIGHT_KM = { iss: 420, css: 400 };
     return SAT_HEIGHT_KM[satellite] || 400;
-  }
+  }, [peakAltKm, currentPos, alt, satellite]);
+
+  // 量化到整公里：实时位置微小抖动（<1km）不触发通视圆重建
+  // （半径变化远小于 3° 采样与像素尺度，视觉无差）。
+  const altKey = Math.round(resolvedAltKm);
 
   // 地面站可视范围圆（含极套环处理，避免 ±180° 接缝竖线）
   useEffect(() => {
@@ -91,7 +98,7 @@ export function useStationLayers({
     stationFootFRef.current = null;
     if (!showVisibility) return;
 
-    const h = resolveSatHeight();
+    const h = resolvedAltKm;
     const maxLatDeg = proj === "EPSG:4326" ? 90 : 85;
     const items = computeFootprint(lat, lon, h, 0, 3, maxLatDeg);
     stationFootFRef.current = [];
@@ -113,6 +120,6 @@ export function useStationLayers({
         src.addFeature(line);
       }
     });
-  }, [showVisibility, lat, lon, alt, currentPos, proj, satellite, activePass, gt,
+  }, [showVisibility, lat, lon, altKey, proj,
       stationFootprintSourceRef, mapObjRef]); // eslint-disable-line react-hooks/exhaustive-deps
 }

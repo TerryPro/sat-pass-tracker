@@ -63,6 +63,26 @@ function cesiumStatic() {
   };
 }
 
+// ---------------------------------------------------------------
+// 生产分包：把重量级、边界清晰的第三方库各自拆成独立 chunk，便于并行下载
+// 与长期缓存（库不随应用代码改动而失效）。Cesium 不进包（由 cesiumGlobal.js
+// 运行时按需 <script> 加载）。路由级页面分包由 App.jsx 的 React.lazy 负责。
+// ---------------------------------------------------------------
+function manualVendorChunks(id) {
+  if (!id.includes("node_modules")) return undefined;
+  const p = id.replace(/\\/g, "/");
+  // 仅拆出四个体量大、边界清晰且与其余依赖单向引用（不成环）的库；
+  // echarts/openlayers/satellite 基本无外部依赖，mui 仅单向依赖 react。
+  if (p.includes("/echarts/") || p.includes("/zrender/")) return "echarts";
+  if (p.includes("/ol/")) return "openlayers";
+  if (p.includes("/@mui/") || p.includes("/@emotion/")) return "mui";
+  if (p.includes("/satellite.js/")) return "satellite";
+  // 其余（react/react-dom/redux/router + @babel/runtime 等杂项）统一入 vendor：
+  // 若将 react 单独成块，会与其依赖（如 @babel/runtime）所在的 vendor 互相引用形成
+  // 循环块（vendor <-> react-vendor），可能引发运行时初始化错误，故合并。
+  return "vendor";
+}
+
 // 开发时把 /api 与 /socket.io 代理到 FastAPI 后端（standalone/backend）
 // 端口与代理目标可通过 frontend/.env 配置（见 .env.example）：
 //   VITE_DEV_PORT=5173
@@ -75,6 +95,16 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), cesiumStatic()],
+    build: {
+      // Cesium 运行时按需加载、不进 bundle；此处把重量级第三方库拆成独立 chunk
+      // （见 manualVendorChunks），并行下载 + 长期缓存。阀值适当上调避免正常分包误报。
+      chunkSizeWarningLimit: 900,
+      rollupOptions: {
+        output: {
+          manualChunks: manualVendorChunks,
+        },
+      },
+    },
     server: {
       port,
       host: true,

@@ -13,6 +13,10 @@ import SceneControls from "./satellite3d/SceneControls.jsx";
 import SatListPanel from "./satellite3d/SatListPanel.jsx";
 import SatInfoPanel from "./satellite3d/SatInfoPanel.jsx";
 
+// 播放时 React 状态推送节流间隔（墙钟 ms）：3D 点位由 Cesium onTick 命令式驱动保持流畅，
+// 详情面板文本/重采样无需每帧刷新，节流到 ~10Hz 避免播放时整棵 React 树每帧重渲染。
+const PLAYED_PUSH_INTERVAL_MS = 100;
+
 export default function Satellites3DPage() {
   const dispatch = useDispatch();
   const meta = useSelector((s) => s.library.meta);
@@ -48,6 +52,8 @@ export default function Satellites3DPage() {
   const orbitColor = useSelector((s) => s.settings.values?.orbit_color) || "rgba(255,180,70,0.55)";
   // 3D 组件引用：播放/时间由 Cesium 自带控件驱动，这里仅用于「回到当前」设置时钟
   const globeRef = useRef(null);
+  // 播放时上次向 React 推送显示时刻的墙钟时间（节流用）
+  const lastPlayedPushRef = useRef(0);
 
   useEffect(() => {
     dispatch(loadLibraryMeta());
@@ -128,7 +134,13 @@ export default function Satellites3DPage() {
           lighting={lighting}
           frame={frame}
           onTimeChange={(d) => {
-            setPlayedDate((prev) => (prev.getTime() === d.getTime() ? prev : d));
+            // 播放时 Cesium 每帧回调：React 状态推送节流到 ~10Hz（墙钟），
+            // 3D 点位/轨道由 MultiGlobe 的 onTick 命令式驱动，不依赖本状态，流畅度不受影响。
+            const wall = Date.now();
+            if (wall - lastPlayedPushRef.current >= PLAYED_PUSH_INTERVAL_MS) {
+              lastPlayedPushRef.current = wall;
+              setPlayedDate((prev) => (prev.getTime() === d.getTime() ? prev : d));
+            }
             // 显示时刻每推进 1 小时 → 以该时刻重采样轨道缓存（体现 J2 进动）
             maybeResample(d);
           }}

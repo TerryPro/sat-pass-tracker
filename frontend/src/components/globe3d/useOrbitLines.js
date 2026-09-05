@@ -24,11 +24,13 @@ export function useOrbitLines({
     if (!orbitsMapRef.current.size) return;
     orbitsMapRef.current.forEach((o) => {
       if (!o.cache || o.cache.samples.length < 2) return;
+      // 每条轨道线独立的节流缓存（生命周期与实体一致）：按模拟时间节流重算，见 globeUtils.ORBIT_LINE_SIM_STEP_MS
+      const lineCache = { now: NaN, positions: null, cacheRef: null, inertial: null };
       const e = viewer.entities.add({
         polyline: {
           // 统一算法（见 globeUtils.orbitLinePositions）：仅坐标系决定转换时刻
           positions: new Cesium.CallbackProperty(
-            () => orbitLinePositions(o, viewer, inertialRef.current),
+            () => orbitLinePositions(o, viewer, inertialRef.current, lineCache),
             false
           ),
           width: 1,
@@ -52,10 +54,12 @@ export function useOrbitLines({
     if (highlightNorad == null) return;
     const cur = orbitsMapRef.current.get(highlightNorad);
     if (!cur) return;
+    // 高亮轨道线独立节流缓存（与普通轨道线一致）
+    const hlCache = { now: NaN, positions: null, cacheRef: null, inertial: null };
     highlightOrbitRef.current = viewer.entities.add({
       polyline: {
         positions: new Cesium.CallbackProperty(
-          () => orbitLinePositions(cur, viewer, inertialRef.current),
+          () => orbitLinePositions(cur, viewer, inertialRef.current, hlCache),
           false
         ),
         width: 1, // 与普通轨道线同宽，仅用颜色区分（不加粗）

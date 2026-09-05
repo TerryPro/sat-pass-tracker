@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import Box from "@mui/material/Box";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
@@ -176,7 +176,17 @@ export default function AppShell() {
           flexDirection: "column",
         }}
       >
-        <Outlet />
+        {/* 路由级懒加载页的 Suspense 边界：放在 Outlet 外层，使切换页时
+            导航壳（顶栏/侧边菜单）保持挂载，仅内容区短暂显示加载占位。 */}
+        <Suspense
+          fallback={
+            <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "text.secondary", fontSize: 13 }}>
+              加载中…
+            </Box>
+          }
+        >
+          <Outlet />
+        </Suspense>
       </Box>
     </Box>
   );
